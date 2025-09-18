@@ -42,6 +42,16 @@
         "command": "rfBrowserKeywords.refresh",
         "title": "Refresh",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "rfBrowserKeywords.editKeywordDefaults",
+        "title": "Edit Keyword Defaults",
+        "icon": "$(settings)"
+      },
+      {
+        "command": "rfBrowserKeywords.addCustomKeyword",
+        "title": "Add Custom Keyword",
+        "icon": "$(plus)"
       }
     ],
     "menus": {
@@ -64,9 +74,19 @@
       ],
       "view/title": [
         {
+          "command": "rfBrowserKeywords.addCustomKeyword",
+          "when": "view == rfBrowserKeywords",
+          "group": "navigation@1"
+        },
+        {
+          "command": "rfBrowserKeywords.editKeywordDefaults",
+          "when": "view == rfBrowserKeywords",
+          "group": "navigation@2"
+        },
+        {
           "command": "rfBrowserKeywords.refresh",
           "when": "view == rfBrowserKeywords",
-          "group": "navigation"
+          "group": "navigation@3"
         }
       ]
     },
@@ -82,6 +102,53 @@
           "type": "boolean",
           "default": true,
           "description": "Show icons in keyword tree items"
+        },
+        "robotFrameworkKeywords.customKeywords": {
+          "type": "array",
+          "default": [],
+          "description": "Custom keywords defined by the user",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {"type": "string"},
+              "implementation": {"type": "string"},
+              "library": {"type": "string"},
+              "description": {"type": "string"}
+            }
+          }
+        },
+        "robotFrameworkKeywords.defaultValues": {
+          "type": "object",
+          "default": {
+            "url": "https://example.com",
+            "selector": "css=.my-element",
+            "text": "Sample text",
+            "browser": "chromium",
+            "timeout": "10s",
+            "filename": "screenshot.png",
+            "path": "/path/to/file",
+            "message": "Test message",
+            "value": "test_value",
+            "key": "test_key"
+          },
+          "description": "Default values for keyword parameters"
+        },
+        "robotFrameworkKeywords.scanCustomKeywords": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically scan workspace for custom keywords"
+        },
+        "robotFrameworkKeywords.pythonKeywordPaths": {
+          "type": "array",
+          "default": [],
+          "description": "Paths to Python files containing Robot Framework keywords",
+          "items": {"type": "string"}
+        },
+        "robotFrameworkKeywords.robotKeywordPaths": {
+          "type": "array",
+          "default": [],
+          "description": "Paths to Robot Framework files containing custom keywords",
+          "items": {"type": "string"}
         }
       }
     }

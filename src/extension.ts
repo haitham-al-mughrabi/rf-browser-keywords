@@ -45,6 +45,15 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('rfBrowserKeywords.refresh', () => {
         provider.refresh();
     });
+
+    vscode.commands.registerCommand('rfBrowserKeywords.editKeywordDefaults', async () => {
+        await editKeywordDefaults();
+    });
+
+    vscode.commands.registerCommand('rfBrowserKeywords.addCustomKeyword', async () => {
+        await addCustomKeyword();
+        provider.refresh();
+    });
 }
 
 async function customizeKeywordParameters(item: KeywordTreeItem): Promise<string | undefined> {
@@ -56,16 +65,17 @@ async function customizeKeywordParameters(item: KeywordTreeItem): Promise<string
     }
 
     let customizedKeyword = implementation;
+    const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
+    const defaultValues = config.get('defaultValues', {}) as Record<string, string>;
 
     for (const placeholder of placeholders) {
         const paramName = placeholder.replace(/\$\{|\}/g, '');
+        const defaultValue = defaultValues[paramName] || getBuiltInDefault(paramName);
+
         const value = await vscode.window.showInputBox({
             prompt: `Enter value for parameter: ${paramName}`,
             placeHolder: placeholder,
-            value: paramName === 'url' ? 'https://example.com' :
-                   paramName === 'selector' ? 'css=.my-element' :
-                   paramName === 'text' ? 'Sample text' :
-                   paramName === 'browser' ? 'chromium' : ''
+            value: defaultValue
         });
 
         if (value === undefined) {
@@ -77,6 +87,153 @@ async function customizeKeywordParameters(item: KeywordTreeItem): Promise<string
     }
 
     return customizedKeyword;
+}
+
+function getBuiltInDefault(paramName: string): string {
+    const builtInDefaults: Record<string, string> = {
+        'url': 'https://example.com',
+        'selector': 'css=.my-element',
+        'text': 'Sample text',
+        'browser': 'chromium',
+        'timeout': '10s',
+        'filename': 'screenshot.png',
+        'path': '/path/to/file',
+        'message': 'Test message',
+        'value': 'test_value',
+        'key': 'test_key'
+    };
+    return builtInDefaults[paramName] || '';
+}
+
+async function editKeywordDefaults(): Promise<void> {
+    const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
+    const currentDefaults = config.get('defaultValues', {}) as Record<string, string>;
+
+    const result = await vscode.window.showQuickPick([
+        { label: '$(add) Add New Default', action: 'add' },
+        { label: '$(edit) Edit Existing Defaults', action: 'edit' },
+        { label: '$(trash) Reset to Defaults', action: 'reset' }
+    ], {
+        placeHolder: 'Choose an action for keyword defaults'
+    });
+
+    if (!result) return;
+
+    switch (result.action) {
+        case 'add':
+            await addNewDefault(currentDefaults);
+            break;
+        case 'edit':
+            await editExistingDefaults(currentDefaults);
+            break;
+        case 'reset':
+            await resetDefaults();
+            break;
+    }
+}
+
+async function addNewDefault(currentDefaults: Record<string, string>): Promise<void> {
+    const paramName = await vscode.window.showInputBox({
+        prompt: 'Enter parameter name (without ${} brackets)',
+        placeHolder: 'e.g., url, selector, text'
+    });
+
+    if (!paramName) return;
+
+    const defaultValue = await vscode.window.showInputBox({
+        prompt: `Enter default value for parameter: ${paramName}`,
+        placeHolder: 'Default value'
+    });
+
+    if (defaultValue !== undefined) {
+        currentDefaults[paramName] = defaultValue;
+        const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
+        await config.update('defaultValues', currentDefaults, vscode.ConfigurationTarget.Global);
+        vscode.window.showInformationMessage(`Added default for ${paramName}: ${defaultValue}`);
+    }
+}
+
+async function editExistingDefaults(currentDefaults: Record<string, string>): Promise<void> {
+    const items = Object.entries(currentDefaults).map(([key, value]) => ({
+        label: key,
+        description: value,
+        key: key,
+        value: value
+    }));
+
+    const selected = await vscode.window.showQuickPick(items, {
+        placeHolder: 'Select parameter to edit'
+    });
+
+    if (!selected) return;
+
+    const newValue = await vscode.window.showInputBox({
+        prompt: `Edit default value for: ${selected.key}`,
+        value: selected.value
+    });
+
+    if (newValue !== undefined) {
+        currentDefaults[selected.key] = newValue;
+        const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
+        await config.update('defaultValues', currentDefaults, vscode.ConfigurationTarget.Global);
+        vscode.window.showInformationMessage(`Updated default for ${selected.key}: ${newValue}`);
+    }
+}
+
+async function resetDefaults(): Promise<void> {
+    const confirmed = await vscode.window.showWarningMessage(
+        'Reset all keyword defaults to built-in values?',
+        { modal: true },
+        'Reset'
+    );
+
+    if (confirmed === 'Reset') {
+        const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
+        await config.update('defaultValues', undefined, vscode.ConfigurationTarget.Global);
+        vscode.window.showInformationMessage('Keyword defaults reset to built-in values');
+    }
+}
+
+async function addCustomKeyword(): Promise<void> {
+    const name = await vscode.window.showInputBox({
+        prompt: 'Enter keyword name',
+        placeHolder: 'e.g., My Custom Keyword'
+    });
+
+    if (!name) return;
+
+    const implementation = await vscode.window.showInputBox({
+        prompt: 'Enter keyword implementation',
+        placeHolder: 'e.g., My Custom Keyword    ${param1}    ${param2}'
+    });
+
+    if (!implementation) return;
+
+    const library = await vscode.window.showInputBox({
+        prompt: 'Enter library name',
+        placeHolder: 'e.g., Custom, MyLibrary',
+        value: 'Custom'
+    });
+
+    if (!library) return;
+
+    const description = await vscode.window.showInputBox({
+        prompt: 'Enter description (optional)',
+        placeHolder: 'Brief description of what this keyword does'
+    });
+
+    const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
+    const customKeywords = config.get('customKeywords', []) as any[];
+
+    customKeywords.push({
+        name,
+        implementation,
+        library,
+        description: description || ''
+    });
+
+    await config.update('customKeywords', customKeywords, vscode.ConfigurationTarget.Global);
+    vscode.window.showInformationMessage(`Added custom keyword: ${name}`);
 }
 
 export function deactivate() {}
@@ -91,12 +248,12 @@ class KeywordTreeItem extends vscode.TreeItem {
         super(label, collapsibleState);
 
         if (implementation) {
-            this.tooltip = `${this.label}: Click to insert, Right-click for options`;
+            this.tooltip = `${this.label}: Click to copy, Right-click for more options`;
             this.description = library;
             this.contextValue = 'keyword';
             this.command = {
-                command: 'rfBrowserKeywords.insertKeyword',
-                title: 'Insert Keyword',
+                command: 'rfBrowserKeywords.copyKeyword',
+                title: 'Copy Keyword',
                 arguments: [this]
             };
 
@@ -172,6 +329,8 @@ class RobotFrameworkKeywordProvider implements vscode.TreeDataProvider<KeywordTr
         }
 
         switch (element.label) {
+            case 'Custom Keywords':
+                return Promise.resolve(this.getCustomKeywords());
             case 'Browser Library':
                 return Promise.resolve(this.getBrowserSubcategories());
             case 'BuiltIn Library':
@@ -227,7 +386,7 @@ class RobotFrameworkKeywordProvider implements vscode.TreeDataProvider<KeywordTr
     }
 
     private getLibraryCategories(): KeywordTreeItem[] {
-        return [
+        const categories = [
             new KeywordTreeItem('Browser Library', vscode.TreeItemCollapsibleState.Expanded),
             new KeywordTreeItem('BuiltIn Library', vscode.TreeItemCollapsibleState.Collapsed),
             new KeywordTreeItem('Collections Library', vscode.TreeItemCollapsibleState.Collapsed),
@@ -237,6 +396,29 @@ class RobotFrameworkKeywordProvider implements vscode.TreeDataProvider<KeywordTr
             new KeywordTreeItem('Process Library', vscode.TreeItemCollapsibleState.Collapsed),
             new KeywordTreeItem('XML Library', vscode.TreeItemCollapsibleState.Collapsed)
         ];
+
+        // Add Custom Keywords category if any exist
+        const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
+        const customKeywords = config.get('customKeywords', []) as any[];
+        if (customKeywords.length > 0) {
+            categories.unshift(new KeywordTreeItem('Custom Keywords', vscode.TreeItemCollapsibleState.Collapsed));
+        }
+
+        return categories;
+    }
+
+    private getCustomKeywords(): KeywordTreeItem[] {
+        const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
+        const customKeywords = config.get('customKeywords', []) as any[];
+
+        return customKeywords.map(keyword =>
+            new KeywordTreeItem(
+                keyword.name,
+                vscode.TreeItemCollapsibleState.None,
+                keyword.implementation,
+                keyword.library
+            )
+        );
     }
 
     private getBrowserSubcategories(): KeywordTreeItem[] {
