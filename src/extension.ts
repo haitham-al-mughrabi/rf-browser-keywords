@@ -1,8 +1,15 @@
 import * as vscode from 'vscode';
+import * as fs from 'fs';
+import * as path from 'path';
 
 export function activate(context: vscode.ExtensionContext) {
     const provider = new RobotFrameworkKeywordProvider();
     vscode.window.registerTreeDataProvider('rfBrowserKeywords', provider);
+
+    // Scan workspace for keywords on activation
+    scanWorkspaceKeywords().then(() => {
+        provider.refresh();
+    });
 
     vscode.commands.registerCommand('rfBrowserKeywords.insertKeyword', (item: KeywordTreeItem) => {
         if (item.implementation) {
@@ -42,7 +49,9 @@ export function activate(context: vscode.ExtensionContext) {
         }
     });
 
-    vscode.commands.registerCommand('rfBrowserKeywords.refresh', () => {
+    vscode.commands.registerCommand('rfBrowserKeywords.refresh', async () => {
+        vscode.window.showInformationMessage('Scanning workspace for keywords...');
+        await scanWorkspaceKeywords();
         provider.refresh();
     });
 
@@ -234,6 +243,282 @@ async function addCustomKeyword(): Promise<void> {
 
     await config.update('customKeywords', customKeywords, vscode.ConfigurationTarget.Global);
     vscode.window.showInformationMessage(`Added custom keyword: ${name}`);
+}
+
+async function scanWorkspaceKeywords(): Promise<void> {
+    const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
+    const shouldScan = config.get('scanCustomKeywords', true);
+
+    if (!shouldScan) return;
+
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+    if (!workspaceFolders) return;
+
+    const discoveredKeywords: any[] = [];
+
+    for (const folder of workspaceFolders) {
+        const workspacePath = folder.uri.fsPath;
+
+        // Scan Libraries folder for Python keywords
+        await scanPythonKeywords(path.join(workspacePath, 'Libraries'), discoveredKeywords);
+
+        // Scan POM/Keywords/Generic folder for Robot keywords
+        await scanRobotKeywords(path.join(workspacePath, 'POM', 'Keywords', 'Generic'), discoveredKeywords);
+
+        // Scan Utilities folder for both Python and Robot keywords
+        await scanUtilitiesFolder(path.join(workspacePath, 'Utilities'), discoveredKeywords);
+    }
+
+    if (discoveredKeywords.length > 0) {
+        // Merge with existing custom keywords
+        const existingKeywords = config.get('customKeywords', []) as any[];
+        const mergedKeywords = mergeKeywords(existingKeywords, discoveredKeywords);
+
+        await config.update('customKeywords', mergedKeywords, vscode.ConfigurationTarget.Global);
+        vscode.window.showInformationMessage(`Discovered ${discoveredKeywords.length} keywords from workspace`);
+    }
+}
+
+async function scanPythonKeywords(librariesPath: string, keywords: any[]): Promise<void> {
+    if (!fs.existsSync(librariesPath)) return;
+
+    try {
+        const files = await getAllPythonFiles(librariesPath);
+
+        for (const filePath of files) {
+            const content = fs.readFileSync(filePath, 'utf-8');
+            const extractedKeywords = extractPythonKeywords(content, filePath);
+            keywords.push(...extractedKeywords);
+        }
+    } catch (error) {
+        console.error('Error scanning Python keywords:', error);
+    }
+}
+
+async function scanRobotKeywords(keywordsPath: string, keywords: any[]): Promise<void> {
+    if (!fs.existsSync(keywordsPath)) return;
+
+    try {
+        const files = await getAllRobotFiles(keywordsPath);
+
+        for (const filePath of files) {
+            const content = fs.readFileSync(filePath, 'utf-8');
+            const extractedKeywords = extractRobotKeywords(content, filePath);
+            keywords.push(...extractedKeywords);
+        }
+    } catch (error) {
+        console.error('Error scanning Robot keywords:', error);
+    }
+}
+
+async function scanUtilitiesFolder(utilitiesPath: string, keywords: any[]): Promise<void> {
+    if (!fs.existsSync(utilitiesPath)) return;
+
+    try {
+        // Scan Python files in Utilities
+        const pythonFiles = await getAllPythonFiles(utilitiesPath);
+        for (const filePath of pythonFiles) {
+            const content = fs.readFileSync(filePath, 'utf-8');
+            const extractedKeywords = extractPythonKeywords(content, filePath);
+            keywords.push(...extractedKeywords);
+        }
+
+        // Scan Robot files in Utilities
+        const robotFiles = await getAllRobotFiles(utilitiesPath);
+        for (const filePath of robotFiles) {
+            const content = fs.readFileSync(filePath, 'utf-8');
+            const extractedKeywords = extractRobotKeywords(content, filePath);
+            keywords.push(...extractedKeywords);
+        }
+    } catch (error) {
+        console.error('Error scanning Utilities folder:', error);
+    }
+}
+
+async function getAllPythonFiles(dirPath: string): Promise<string[]> {
+    const files: string[] = [];
+
+    function scanDirectory(currentPath: string) {
+        if (!fs.existsSync(currentPath)) return;
+
+        const items = fs.readdirSync(currentPath);
+
+        for (const item of items) {
+            const itemPath = path.join(currentPath, item);
+            const stat = fs.statSync(itemPath);
+
+            if (stat.isDirectory()) {
+                scanDirectory(itemPath); // Recursive scan
+            } else if (item.endsWith('.py')) {
+                files.push(itemPath);
+            }
+        }
+    }
+
+    scanDirectory(dirPath);
+    return files;
+}
+
+async function getAllRobotFiles(dirPath: string): Promise<string[]> {
+    const files: string[] = [];
+
+    function scanDirectory(currentPath: string) {
+        if (!fs.existsSync(currentPath)) return;
+
+        const items = fs.readdirSync(currentPath);
+
+        for (const item of items) {
+            const itemPath = path.join(currentPath, item);
+            const stat = fs.statSync(itemPath);
+
+            if (stat.isDirectory()) {
+                scanDirectory(itemPath); // Recursive scan
+            } else if (item.endsWith('.robot')) {
+                files.push(itemPath);
+            }
+        }
+    }
+
+    scanDirectory(dirPath);
+    return files;
+}
+
+function extractPythonKeywords(content: string, filePath: string): any[] {
+    const keywords: any[] = [];
+    const fileName = path.basename(filePath, '.py');
+
+    // Match Python methods that could be Robot Framework keywords
+    // Look for methods with docstrings or @keyword decorator
+    const methodRegex = /(?:@keyword(?:\([^)]*\))?\s*\n)?\s*def\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\([^)]*\):/g;
+    const docstringRegex = /"""([^"]*(?:"(?!"")[^"]*)*)"""/;
+
+    let match;
+    while ((match = methodRegex.exec(content)) !== null) {
+        const methodName = match[1];
+
+        // Skip private methods and common Python methods
+        if (methodName.startsWith('_') ||
+            ['setUp', 'tearDown', 'setUpClass', 'tearDownClass', 'init'].includes(methodName)) {
+            continue;
+        }
+
+        // Convert snake_case to Title Case for Robot Framework
+        const keywordName = methodName.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+
+        // Try to extract parameters from the method signature
+        const methodStart = match.index;
+        const methodLine = content.substring(0, methodStart).split('\n').length;
+        const nextMethodMatch = content.indexOf('\ndef ', methodStart + 1);
+        const methodEnd = nextMethodMatch > -1 ? nextMethodMatch : content.length;
+        const methodContent = content.substring(methodStart, methodEnd);
+
+        // Extract parameters (basic implementation)
+        const paramMatch = methodContent.match(/def\s+[^(]+\(([^)]*)\)/);
+        const params = paramMatch ? parseParameters(paramMatch[1]) : [];
+
+        const implementation = params.length > 0
+            ? `${keywordName}    ${params.map(p => `\${${p}}`).join('    ')}`
+            : keywordName;
+
+        keywords.push({
+            name: keywordName,
+            implementation: implementation,
+            library: fileName,
+            description: `Python keyword from ${fileName}.py`,
+            source: 'python',
+            filePath: filePath
+        });
+    }
+
+    return keywords;
+}
+
+function extractRobotKeywords(content: string, filePath: string): any[] {
+    const keywords: any[] = [];
+    const fileName = path.basename(filePath, '.robot');
+
+    // Look for Robot Framework keyword definitions
+    const lines = content.split('\n');
+    let inKeywordSection = false;
+    let currentKeyword: any = null;
+
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+
+        // Check for Keywords section
+        if (line.match(/^\*+\s*(Keywords?)\s*\**/i)) {
+            inKeywordSection = true;
+            continue;
+        }
+
+        // Check for other sections
+        if (line.match(/^\*+\s*(Test Cases?|Settings?|Variables?)\s*\**/i)) {
+            inKeywordSection = false;
+            continue;
+        }
+
+        if (!inKeywordSection || line === '' || line.startsWith('#')) {
+            continue;
+        }
+
+        // Check if this is a keyword definition (starts at column 0, not indented)
+        if (!lines[i].startsWith(' ') && !lines[i].startsWith('\t') && line !== '') {
+            // Save previous keyword if exists
+            if (currentKeyword) {
+                keywords.push(currentKeyword);
+            }
+
+            // Start new keyword
+            currentKeyword = {
+                name: line,
+                implementation: line,
+                library: fileName,
+                description: `Robot keyword from ${fileName}.robot`,
+                source: 'robot',
+                filePath: filePath
+            };
+        }
+    }
+
+    // Don't forget the last keyword
+    if (currentKeyword) {
+        keywords.push(currentKeyword);
+    }
+
+    return keywords;
+}
+
+function parseParameters(paramString: string): string[] {
+    if (!paramString.trim()) return [];
+
+    const params = paramString.split(',').map(p => p.trim());
+    return params
+        .filter(p => p !== 'self' && p !== 'cls' && !p.startsWith('*'))
+        .map(p => {
+            // Remove default values and type hints
+            let param = p.split('=')[0].split(':')[0].trim();
+            return param;
+        })
+        .filter(p => p.length > 0);
+}
+
+function mergeKeywords(existing: any[], discovered: any[]): any[] {
+    const merged = [...existing];
+
+    for (const newKeyword of discovered) {
+        // Check if keyword already exists (by name and source)
+        const exists = existing.some(k =>
+            k.name === newKeyword.name &&
+            k.source === newKeyword.source &&
+            k.filePath === newKeyword.filePath
+        );
+
+        if (!exists) {
+            merged.push(newKeyword);
+        }
+    }
+
+    return merged;
 }
 
 export function deactivate() {}
