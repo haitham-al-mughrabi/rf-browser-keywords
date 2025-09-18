@@ -6,10 +6,14 @@ export function activate(context: vscode.ExtensionContext) {
     const provider = new RobotFrameworkKeywordProvider();
     vscode.window.registerTreeDataProvider('rfBrowserKeywords', provider);
 
-    // Scan workspace for keywords on activation
-    scanWorkspaceKeywords().then(() => {
+    // Clear old keywords and scan workspace for keywords on activation
+    const clearAndScan = async () => {
+        const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
+        await config.update('customKeywords', [], vscode.ConfigurationTarget.Global);
+        await scanWorkspaceKeywords();
         provider.refresh();
-    });
+    };
+    clearAndScan();
 
     vscode.commands.registerCommand('rfBrowserKeywords.insertKeyword', (item: KeywordTreeItem) => {
         if (item.implementation) {
@@ -51,6 +55,9 @@ export function activate(context: vscode.ExtensionContext) {
 
     vscode.commands.registerCommand('rfBrowserKeywords.refresh', async () => {
         vscode.window.showInformationMessage('Scanning workspace for keywords...');
+        // Clear existing custom keywords to force fresh scan
+        const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
+        await config.update('customKeywords', [], vscode.ConfigurationTarget.Global);
         await scanWorkspaceKeywords();
         provider.refresh();
     });
@@ -664,22 +671,41 @@ function extractKeywordArguments(keywordLine: string, allLines: string[], curren
     const args: string[] = [];
 
     // Look for [Arguments] in the next few lines
-    for (let i = currentIndex + 1; i < Math.min(currentIndex + 10, allLines.length); i++) {
+    let foundArguments = false;
+    for (let i = currentIndex + 1; i < Math.min(currentIndex + 20, allLines.length); i++) {
         const line = allLines[i].trim();
+        const originalLine = allLines[i];
 
         // Stop if we hit another keyword or section
-        if ((!allLines[i].startsWith(' ') && !allLines[i].startsWith('\t') && line !== '') ||
+        if ((!originalLine.startsWith(' ') && !originalLine.startsWith('\t') && line !== '') ||
             line.match(/^\*+/)) {
             break;
         }
 
         // Check for [Arguments] tag
         if (line.match(/^\[Arguments\]/i)) {
+            foundArguments = true;
             const argLine = line.replace(/^\[Arguments\]/i, '').trim();
             if (argLine) {
-                const extractedArgs = argLine.split(/\s+/).filter(arg => arg.length > 0);
-                args.push(...extractedArgs);
+                // Handle arguments on same line as [Arguments]
+                const argsOnSameLine = parseArgumentLine(argLine);
+                args.push(...argsOnSameLine);
             }
+            continue;
+        }
+
+        // If we found [Arguments], look for continuation lines with ...
+        if (foundArguments && line.startsWith('...')) {
+            const continuationLine = line.replace(/^\.\.\./, '').trim();
+            if (continuationLine) {
+                const continuationArgs = parseArgumentLine(continuationLine);
+                args.push(...continuationArgs);
+            }
+            continue;
+        }
+
+        // If we found [Arguments] but this line doesn't start with ..., we're done with arguments
+        if (foundArguments && !line.startsWith('...') && line !== '') {
             break;
         }
     }
@@ -693,6 +719,14 @@ function extractKeywordArguments(keywordLine: string, allLines: string[], curren
         name: keywordName,
         implementation: implementation
     };
+}
+
+function parseArgumentLine(argLine: string): string[] {
+    if (!argLine.trim()) return [];
+
+    // Split by spaces but keep together argument=defaultValue pairs
+    const parts = argLine.split(/\s+/).filter(arg => arg.length > 0);
+    return parts;
 }
 
 function parseParameters(paramString: string): string[] {
