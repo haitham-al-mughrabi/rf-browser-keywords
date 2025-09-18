@@ -319,7 +319,7 @@ async function getAllRobotFiles(dirPath) {
             if (stat.isDirectory()) {
                 scanDirectory(itemPath); // Recursive scan
             }
-            else if (item.endsWith('.robot')) {
+            else if (item.endsWith('.robot') || item.endsWith('.resource')) {
                 files.push(itemPath);
             }
         }
@@ -369,7 +369,8 @@ function extractPythonKeywords(content, filePath) {
 }
 function extractRobotKeywords(content, filePath) {
     const keywords = [];
-    const fileName = path.basename(filePath, '.robot');
+    const fileExtension = path.extname(filePath);
+    const fileName = path.basename(filePath, fileExtension);
     // Look for Robot Framework keyword definitions
     const lines = content.split('\n');
     let inKeywordSection = false;
@@ -382,7 +383,7 @@ function extractRobotKeywords(content, filePath) {
             continue;
         }
         // Check for other sections
-        if (line.match(/^\*+\s*(Test Cases?|Settings?|Variables?)\s*\**/i)) {
+        if (line.match(/^\*+\s*(Test Cases?|Settings?|Variables?|Tasks?)\s*\**/i)) {
             inKeywordSection = false;
             continue;
         }
@@ -395,14 +396,17 @@ function extractRobotKeywords(content, filePath) {
             if (currentKeyword) {
                 keywords.push(currentKeyword);
             }
+            // Extract arguments from keyword definition if present
+            const keywordWithArgs = extractKeywordArguments(line, lines, i);
             // Start new keyword
             currentKeyword = {
-                name: line,
-                implementation: line,
+                name: keywordWithArgs.name,
+                implementation: keywordWithArgs.implementation,
                 library: fileName,
-                description: `Robot keyword from ${fileName}.robot`,
+                description: `${fileExtension === '.resource' ? 'Resource' : 'Robot'} keyword from ${fileName}${fileExtension}`,
                 source: 'robot',
-                filePath: filePath
+                filePath: filePath,
+                fileType: fileExtension === '.resource' ? 'resource' : 'robot'
             };
         }
     }
@@ -411,6 +415,36 @@ function extractRobotKeywords(content, filePath) {
         keywords.push(currentKeyword);
     }
     return keywords;
+}
+function extractKeywordArguments(keywordLine, allLines, currentIndex) {
+    const keywordName = keywordLine.trim();
+    const args = [];
+    // Look for [Arguments] in the next few lines
+    for (let i = currentIndex + 1; i < Math.min(currentIndex + 10, allLines.length); i++) {
+        const line = allLines[i].trim();
+        // Stop if we hit another keyword or section
+        if ((!allLines[i].startsWith(' ') && !allLines[i].startsWith('\t') && line !== '') ||
+            line.match(/^\*+/)) {
+            break;
+        }
+        // Check for [Arguments] tag
+        if (line.match(/^\[Arguments\]/i)) {
+            const argLine = line.replace(/^\[Arguments\]/i, '').trim();
+            if (argLine) {
+                const extractedArgs = argLine.split(/\s+/).filter(arg => arg.length > 0);
+                args.push(...extractedArgs);
+            }
+            break;
+        }
+    }
+    // Create implementation with arguments
+    const implementation = args.length > 0
+        ? `${keywordName}    ${args.join('    ')}`
+        : keywordName;
+    return {
+        name: keywordName,
+        implementation: implementation
+    };
 }
 function parseParameters(paramString) {
     if (!paramString.trim())
@@ -471,6 +505,9 @@ class KeywordTreeItem extends vscode.TreeItem {
             }
             else if (this.label.endsWith('.robot')) {
                 this.iconPath = new vscode.ThemeIcon('robot');
+            }
+            else if (this.label.endsWith('.resource')) {
+                this.iconPath = new vscode.ThemeIcon('symbol-module');
             }
             else {
                 this.iconPath = new vscode.ThemeIcon('folder');
@@ -619,10 +656,36 @@ class RobotFrameworkKeywordProvider {
         // Create tree items for each file
         const categories = [];
         fileGroups.forEach((keywords, fileName) => {
-            const displayName = fileName.endsWith('.py') || fileName.endsWith('.robot')
-                ? fileName
-                : `${fileName}${keywords[0].source === 'python' ? '.py' : '.robot'}`;
-            categories.push(new KeywordTreeItem(displayName, vscode.TreeItemCollapsibleState.Collapsed, undefined, keywords[0].source === 'python' ? 'Python Library' : 'Robot Keywords'));
+            let displayName = fileName;
+            let libraryType = 'Robot Keywords';
+            // Add appropriate file extension if not present
+            if (!fileName.includes('.')) {
+                if (keywords[0].source === 'python') {
+                    displayName = `${fileName}.py`;
+                    libraryType = 'Python Library';
+                }
+                else if (keywords[0].fileType === 'resource') {
+                    displayName = `${fileName}.resource`;
+                    libraryType = 'Resource Keywords';
+                }
+                else {
+                    displayName = `${fileName}.robot`;
+                    libraryType = 'Robot Keywords';
+                }
+            }
+            else {
+                // File already has extension
+                if (fileName.endsWith('.py')) {
+                    libraryType = 'Python Library';
+                }
+                else if (fileName.endsWith('.resource')) {
+                    libraryType = 'Resource Keywords';
+                }
+                else {
+                    libraryType = 'Robot Keywords';
+                }
+            }
+            categories.push(new KeywordTreeItem(displayName, vscode.TreeItemCollapsibleState.Collapsed, undefined, libraryType));
         });
         // Add manually created keywords under "Custom Keywords" if any exist
         const manualKeywords = customKeywords.filter(keyword => !keyword.source);
@@ -635,7 +698,7 @@ class RobotFrameworkKeywordProvider {
         const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
         const customKeywords = config.get('customKeywords', []);
         // Remove file extension from the label for comparison
-        const baseFileName = fileName.replace(/\.(py|robot)$/, '');
+        const baseFileName = fileName.replace(/\.(py|robot|resource)$/, '');
         const fileKeywords = customKeywords.filter(keyword => keyword.library === baseFileName &&
             (keyword.source === 'python' || keyword.source === 'robot'));
         return fileKeywords.map(keyword => new KeywordTreeItem(keyword.name, vscode.TreeItemCollapsibleState.None, keyword.implementation, baseFileName));
