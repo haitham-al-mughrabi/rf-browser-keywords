@@ -1,0 +1,99 @@
+{
+  "name": "rf-browser-keywords",
+  "displayName": "Robot Framework Keywords",
+  "description": "VS Code extension to show and insert Robot Framework standard library keywords",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "*"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "views": {
+      "explorer": [
+        {
+          "id": "rfBrowserKeywords",
+          "name": "Robot Framework Keywords"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "rfBrowserKeywords.insertKeyword",
+        "title": "Insert Keyword",
+        "icon": "$(add)"
+      },
+      {
+        "command": "rfBrowserKeywords.copyKeyword",
+        "title": "Copy Keyword",
+        "icon": "$(copy)"
+      },
+      {
+        "command": "rfBrowserKeywords.customizeKeyword",
+        "title": "Customize & Insert Keyword",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "rfBrowserKeywords.refresh",
+        "title": "Refresh",
+        "icon": "$(refresh)"
+      }
+    ],
+    "menus": {
+      "view/item/context": [
+        {
+          "command": "rfBrowserKeywords.insertKeyword",
+          "when": "view == rfBrowserKeywords && viewItem == keyword",
+          "group": "inline@1"
+        },
+        {
+          "command": "rfBrowserKeywords.customizeKeyword",
+          "when": "view == rfBrowserKeywords && viewItem == keyword",
+          "group": "inline@2"
+        },
+        {
+          "command": "rfBrowserKeywords.copyKeyword",
+          "when": "view == rfBrowserKeywords && viewItem == keyword",
+          "group": "inline@3"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "rfBrowserKeywords.refresh",
+          "when": "view == rfBrowserKeywords",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Robot Framework Keywords",
+      "properties": {
+        "robotFrameworkKeywords.customStyle": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable custom styling for keyword tree items"
+        },
+        "robotFrameworkKeywords.showIcons": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show icons in keyword tree items"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.74.0",
+    "@types/node": "16.x",
+    "typescript": "^4.9.4"
+  }
+}

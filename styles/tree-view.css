@@ -1,0 +1,133 @@
+/* Custom styling for Robot Framework Keywords tree view */
+
+.keyword-tree-item {
+    padding: 4px 8px;
+    border-radius: 4px;
+    margin: 2px 0;
+    transition: all 0.2s ease-in-out;
+}
+
+.keyword-tree-item:hover {
+    background-color: var(--vscode-list-hoverBackground);
+    transform: translateX(2px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.keyword-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.keyword-icon {
+    opacity: 0.8;
+    transition: opacity 0.2s ease-in-out;
+}
+
+.keyword-tree-item:hover .keyword-icon {
+    opacity: 1;
+}
+
+.keyword-label {
+    font-weight: 500;
+    color: var(--vscode-foreground);
+}
+
+.keyword-description {
+    font-size: 0.9em;
+    color: var(--vscode-descriptionForeground);
+    font-style: italic;
+    margin-left: auto;
+}
+
+.library-category {
+    font-weight: 600;
+    color: var(--vscode-symbolIcon-variableForeground);
+    border-left: 3px solid var(--vscode-symbolIcon-variableForeground);
+    padding-left: 8px;
+}
+
+.browser-subcategory {
+    font-weight: 500;
+    color: var(--vscode-symbolIcon-classForeground);
+    border-left: 2px solid var(--vscode-symbolIcon-classForeground);
+    padding-left: 6px;
+}
+
+.keyword-buttons {
+    display: flex;
+    gap: 4px;
+    opacity: 0;
+    transition: opacity 0.2s ease-in-out;
+}
+
+.keyword-tree-item:hover .keyword-buttons {
+    opacity: 1;
+}
+
+.keyword-button {
+    padding: 2px 4px;
+    border-radius: 2px;
+    background: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+    border: none;
+    cursor: pointer;
+    font-size: 11px;
+    transition: all 0.2s ease-in-out;
+}
+
+.keyword-button:hover {
+    background: var(--vscode-button-hoverBackground);
+    transform: scale(1.05);
+}
+
+.keyword-button.insert {
+    background: var(--vscode-symbolIcon-functionForeground);
+}
+
+.keyword-button.customize {
+    background: var(--vscode-symbolIcon-moduleForeground);
+}
+
+.keyword-button.copy {
+    background: var(--vscode-symbolIcon-stringForeground);
+}
+
+/* Animation for new items */
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateX(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+.keyword-tree-item {
+    animation: slideIn 0.3s ease-out;
+}
+
+/* Focus states */
+.keyword-tree-item:focus {
+    outline: 2px solid var(--vscode-focusBorder);
+    outline-offset: 1px;
+}
+
+/* Special styling for different keyword types */
+.keyword-action {
+    border-left: 2px solid var(--vscode-symbolIcon-functionForeground);
+}
+
+.keyword-getter {
+    border-left: 2px solid var(--vscode-symbolIcon-propertyForeground);
+}
+
+.keyword-assertion {
+    border-left: 2px solid var(--vscode-symbolIcon-booleanForeground);
+}
+
+.keyword-wait {
+    border-left: 2px solid var(--vscode-symbolIcon-eventForeground);
+}
