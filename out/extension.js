@@ -465,7 +465,16 @@ class KeywordTreeItem extends vscode.TreeItem {
         else {
             this.tooltip = `${this.label} library keywords`;
             this.contextValue = 'library';
-            this.iconPath = new vscode.ThemeIcon('folder');
+            // Set appropriate icons for different file types
+            if (this.label.endsWith('.py')) {
+                this.iconPath = new vscode.ThemeIcon('file-code');
+            }
+            else if (this.label.endsWith('.robot')) {
+                this.iconPath = new vscode.ThemeIcon('robot');
+            }
+            else {
+                this.iconPath = new vscode.ThemeIcon('folder');
+            }
         }
     }
     getKeywordIcon() {
@@ -523,7 +532,7 @@ class RobotFrameworkKeywordProvider {
         }
         switch (element.label) {
             case 'Custom Keywords':
-                return Promise.resolve(this.getCustomKeywords());
+                return Promise.resolve(this.getManualCustomKeywords());
             case 'Browser Library':
                 return Promise.resolve(this.getBrowserSubcategories());
             case 'BuiltIn Library':
@@ -572,7 +581,8 @@ class RobotFrameworkKeywordProvider {
             case 'Assertions':
                 return Promise.resolve(this.getAssertionsKeywords());
             default:
-                return Promise.resolve([]);
+                // Handle file-based categories dynamically
+                return Promise.resolve(this.getKeywordsForFile(element.label));
         }
     }
     getLibraryCategories() {
@@ -586,18 +596,56 @@ class RobotFrameworkKeywordProvider {
             new KeywordTreeItem('Process Library', vscode.TreeItemCollapsibleState.Collapsed),
             new KeywordTreeItem('XML Library', vscode.TreeItemCollapsibleState.Collapsed)
         ];
-        // Add Custom Keywords category if any exist
+        // Add discovered file-based keyword categories
         const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
         const customKeywords = config.get('customKeywords', []);
-        if (customKeywords.length > 0) {
-            categories.unshift(new KeywordTreeItem('Custom Keywords', vscode.TreeItemCollapsibleState.Collapsed));
-        }
+        const fileCategories = this.getFileBasedCategories(customKeywords);
+        // Add file-based categories at the top
+        categories.unshift(...fileCategories);
         return categories;
     }
-    getCustomKeywords() {
+    getFileBasedCategories(customKeywords) {
+        const fileGroups = new Map();
+        // Group keywords by their source file
+        customKeywords.forEach(keyword => {
+            if (keyword.source === 'python' || keyword.source === 'robot') {
+                const fileName = keyword.library;
+                if (!fileGroups.has(fileName)) {
+                    fileGroups.set(fileName, []);
+                }
+                fileGroups.get(fileName).push(keyword);
+            }
+        });
+        // Create tree items for each file
+        const categories = [];
+        fileGroups.forEach((keywords, fileName) => {
+            const displayName = fileName.endsWith('.py') || fileName.endsWith('.robot')
+                ? fileName
+                : `${fileName}${keywords[0].source === 'python' ? '.py' : '.robot'}`;
+            categories.push(new KeywordTreeItem(displayName, vscode.TreeItemCollapsibleState.Collapsed, undefined, keywords[0].source === 'python' ? 'Python Library' : 'Robot Keywords'));
+        });
+        // Add manually created keywords under "Custom Keywords" if any exist
+        const manualKeywords = customKeywords.filter(keyword => !keyword.source);
+        if (manualKeywords.length > 0) {
+            categories.push(new KeywordTreeItem('Custom Keywords', vscode.TreeItemCollapsibleState.Collapsed, undefined, 'Manual'));
+        }
+        return categories.sort((a, b) => a.label.localeCompare(b.label));
+    }
+    getKeywordsForFile(fileName) {
         const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
         const customKeywords = config.get('customKeywords', []);
-        return customKeywords.map(keyword => new KeywordTreeItem(keyword.name, vscode.TreeItemCollapsibleState.None, keyword.implementation, keyword.library));
+        // Remove file extension from the label for comparison
+        const baseFileName = fileName.replace(/\.(py|robot)$/, '');
+        const fileKeywords = customKeywords.filter(keyword => keyword.library === baseFileName &&
+            (keyword.source === 'python' || keyword.source === 'robot'));
+        return fileKeywords.map(keyword => new KeywordTreeItem(keyword.name, vscode.TreeItemCollapsibleState.None, keyword.implementation, baseFileName));
+    }
+    getManualCustomKeywords() {
+        const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
+        const customKeywords = config.get('customKeywords', []);
+        // Only return manually created keywords (no source property)
+        const manualKeywords = customKeywords.filter(keyword => !keyword.source);
+        return manualKeywords.map(keyword => new KeywordTreeItem(keyword.name, vscode.TreeItemCollapsibleState.None, keyword.implementation, keyword.library || 'Custom'));
     }
     getBrowserSubcategories() {
         return [
