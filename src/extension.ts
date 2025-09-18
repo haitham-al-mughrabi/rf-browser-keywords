@@ -70,6 +70,155 @@ export function activate(context: vscode.ExtensionContext) {
         await addCustomKeyword();
         provider.refresh();
     });
+
+    vscode.commands.registerCommand('rfBrowserKeywords.importFile', async (item: KeywordTreeItem) => {
+        await importLibraryOrResource(item);
+    });
+}
+
+async function importLibraryOrResource(item: KeywordTreeItem): Promise<void> {
+    if (!item.label) {
+        vscode.window.showErrorMessage('No file selected for import');
+        return;
+    }
+
+    const editor = vscode.window.activeTextEditor;
+    if (!editor) {
+        vscode.window.showErrorMessage('No active Robot Framework file to import into');
+        return;
+    }
+
+    // Get the file information from the tree item
+    const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
+    const customKeywords = config.get('customKeywords', []) as any[];
+
+    // Find the actual file path for this library
+    const baseFileName = item.label.replace(/\.(py|robot|resource)$/, '');
+    console.log('Looking for file:', baseFileName);
+    console.log('Available keywords:', customKeywords.map(k => `${k.library} (${k.source})`));
+
+    const matchingKeyword = customKeywords.find(keyword =>
+        keyword.library === baseFileName &&
+        (keyword.source === 'python' || keyword.source === 'robot')
+    );
+
+    if (!matchingKeyword) {
+        // Try alternative matching - look for any keyword that contains this name
+        const alternativeMatch = customKeywords.find(keyword =>
+            keyword.filePath && keyword.filePath.includes(baseFileName) &&
+            (keyword.source === 'python' || keyword.source === 'robot')
+        );
+
+        if (alternativeMatch) {
+            console.log('Found alternative match:', alternativeMatch.filePath);
+            // Use the alternative match
+            const workspaceFolders = vscode.workspace.workspaceFolders;
+            if (!workspaceFolders) {
+                vscode.window.showErrorMessage('No workspace folder found');
+                return;
+            }
+
+            const workspacePath = workspaceFolders[0].uri.fsPath;
+            const relativeTargetPath = path.relative(workspacePath, alternativeMatch.filePath);
+
+            // Determine import type based on file extension
+            const isPythonFile = alternativeMatch.filePath.endsWith('.py');
+            const importType = isPythonFile ? 'Library' : 'Resource';
+            const importStatement = `${importType}    ${relativeTargetPath}`;
+
+            // Insert the import statement in the Settings section
+            await insertImportStatement(editor, importStatement);
+            vscode.window.showInformationMessage(`Imported: ${importStatement}`);
+            return;
+        }
+
+        vscode.window.showErrorMessage(`Could not find file path for import. Looking for: "${baseFileName}" in ${customKeywords.length} keywords`);
+        return;
+    }
+
+    // Get relative path from current file to the library/resource
+    const currentFilePath = editor.document.uri.fsPath;
+    const currentFileDir = path.dirname(currentFilePath);
+    const targetFilePath = matchingKeyword.filePath;
+
+    // Get workspace folder to calculate relative path
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+    if (!workspaceFolders) {
+        vscode.window.showErrorMessage('No workspace folder found');
+        return;
+    }
+
+    const workspacePath = workspaceFolders[0].uri.fsPath;
+    const relativeTargetPath = path.relative(workspacePath, targetFilePath);
+
+    // Determine import type based on file extension
+    const isPythonFile = targetFilePath.endsWith('.py');
+    const importType = isPythonFile ? 'Library' : 'Resource';
+    const importStatement = `${importType}    ${relativeTargetPath}`;
+
+    // Insert the import statement in the Settings section
+    await insertImportStatement(editor, importStatement);
+
+    vscode.window.showInformationMessage(`Imported: ${importStatement}`);
+}
+
+async function insertImportStatement(editor: vscode.TextEditor, importStatement: string): Promise<void> {
+    const document = editor.document;
+    const text = document.getText();
+    const lines = text.split('\n');
+
+    let settingsStartLine = -1;
+    let settingsEndLine = -1;
+    let lastImportLine = -1;
+
+    // Find the Settings section
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+
+        if (line.match(/^\*+\s*Settings?\s*\**/i)) {
+            settingsStartLine = i;
+            continue;
+        }
+
+        if (settingsStartLine !== -1 && line.match(/^\*+\s*(Test Cases?|Keywords?|Variables?|Tasks?)\s*\**/i)) {
+            settingsEndLine = i;
+            break;
+        }
+
+        // Track import statements
+        if (settingsStartLine !== -1 && settingsEndLine === -1) {
+            if (line.match(/^(Library|Resource|Variables)\s+/i)) {
+                lastImportLine = i;
+            }
+        }
+    }
+
+    let insertLine: number;
+
+    if (settingsStartLine === -1) {
+        // No Settings section exists, create one at the top
+        const settingsSection = `*** Settings ***\n${importStatement}\n\n`;
+        const insertPosition = new vscode.Position(0, 0);
+        await editor.edit(editBuilder => {
+            editBuilder.insert(insertPosition, settingsSection);
+        });
+        return;
+    }
+
+    if (lastImportLine !== -1) {
+        // Insert after the last import statement
+        insertLine = lastImportLine + 1;
+    } else {
+        // Insert right after the Settings header
+        insertLine = settingsStartLine + 1;
+    }
+
+    const insertPosition = new vscode.Position(insertLine, 0);
+    const importWithNewline = `${importStatement}\n`;
+
+    await editor.edit(editBuilder => {
+        editBuilder.insert(insertPosition, importWithNewline);
+    });
 }
 
 async function customizeKeywordParameters(item: KeywordTreeItem): Promise<string | undefined> {
@@ -283,20 +432,17 @@ async function scanWorkspaceKeywords(): Promise<void> {
         }
 
         if (hasFolders) {
-            // Scan Libraries folder recursively for Python keywords
-            await scanPythonKeywords(path.join(basePath, 'Libraries'), discoveredKeywords, basePath);
+            // Use configurable scan paths
+            const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
+            const scanPaths = config.get('projectScanPaths', [
+                'Libraries/**/*.py',
+                'POM/**/*.{robot,resource}',
+                'Utilities/**/*.{py,robot,resource}',
+                'Resources/**/*.{py,robot,resource}',
+                '*.resource'
+            ]) as string[];
 
-            // Scan POM folder recursively for Robot/Resource keywords
-            await scanRobotKeywords(path.join(basePath, 'POM'), discoveredKeywords, basePath);
-
-            // Scan Utilities folder for both Python and Robot keywords
-            await scanUtilitiesFolder(path.join(basePath, 'Utilities'), discoveredKeywords, basePath);
-
-            // Scan Resources folder for both Python and Robot keywords
-            await scanResourcesFolder(path.join(basePath, 'Resources'), discoveredKeywords, basePath);
-
-            // Scan root level for any .resource files
-            await scanRootResourceFiles(basePath, discoveredKeywords, basePath);
+            await scanWithGlobPatterns(basePath, scanPaths, discoveredKeywords);
         }
     }
 
@@ -394,6 +540,27 @@ async function scanResourcesFolder(resourcesPath: string, keywords: any[], baseP
         }
     } catch (error) {
         console.error('Error scanning Resources folder:', error);
+    }
+}
+
+async function scanWithGlobPatterns(basePath: string, patterns: string[], keywords: any[]): Promise<void> {
+    // Simple pattern-based scanning using existing recursive functions
+    for (const pattern of patterns) {
+        try {
+            if (pattern.includes('Libraries/**/*.py')) {
+                await scanPythonKeywords(path.join(basePath, 'Libraries'), keywords, basePath);
+            } else if (pattern.includes('POM/**/*')) {
+                await scanRobotKeywords(path.join(basePath, 'POM'), keywords, basePath);
+            } else if (pattern.includes('Utilities/**/*')) {
+                await scanUtilitiesFolder(path.join(basePath, 'Utilities'), keywords, basePath);
+            } else if (pattern.includes('Resources/**/*')) {
+                await scanResourcesFolder(path.join(basePath, 'Resources'), keywords, basePath);
+            } else if (pattern === '*.resource') {
+                await scanRootResourceFiles(basePath, keywords, basePath);
+            }
+        } catch (error) {
+            console.error(`Error scanning pattern ${pattern}:`, error);
+        }
     }
 }
 
@@ -864,6 +1031,14 @@ class RobotFrameworkKeywordProvider implements vscode.TreeDataProvider<KeywordTr
             return Promise.resolve(this.getLibraryCategories());
         }
 
+        // Check for contextValue first (new structure)
+        if (element.library === 'project-root') {
+            return Promise.resolve(this.getProjectKeywordCategories());
+        }
+        if (element.library === 'official-root') {
+            return Promise.resolve(this.getOfficialKeywordCategories());
+        }
+
         switch (element.label) {
             case 'Custom Keywords':
                 return Promise.resolve(this.getManualCustomKeywords());
@@ -929,7 +1104,43 @@ class RobotFrameworkKeywordProvider implements vscode.TreeDataProvider<KeywordTr
     }
 
     private getLibraryCategories(): KeywordTreeItem[] {
-        const categories = [
+        const categories = [];
+
+        // Add Project Keywords section
+        const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
+        const customKeywords = config.get('customKeywords', []) as any[];
+
+        if (customKeywords.length > 0) {
+            const projectKeywordsItem = new KeywordTreeItem(
+                'Project Keywords',
+                vscode.TreeItemCollapsibleState.Expanded,
+                undefined,
+                'project-root'
+            );
+            categories.push(projectKeywordsItem);
+        }
+
+        // Add Official Keywords section
+        const officialKeywordsItem = new KeywordTreeItem(
+            'Official Keywords',
+            vscode.TreeItemCollapsibleState.Collapsed,
+            undefined,
+            'official-root'
+        );
+        categories.push(officialKeywordsItem);
+
+        return categories;
+    }
+
+    private getProjectKeywordCategories(): KeywordTreeItem[] {
+        const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
+        const customKeywords = config.get('customKeywords', []) as any[];
+
+        return this.getFileBasedCategories(customKeywords);
+    }
+
+    private getOfficialKeywordCategories(): KeywordTreeItem[] {
+        return [
             new KeywordTreeItem('Browser Library', vscode.TreeItemCollapsibleState.Expanded),
             new KeywordTreeItem('BuiltIn Library', vscode.TreeItemCollapsibleState.Collapsed),
             new KeywordTreeItem('Collections Library', vscode.TreeItemCollapsibleState.Collapsed),
@@ -939,16 +1150,6 @@ class RobotFrameworkKeywordProvider implements vscode.TreeDataProvider<KeywordTr
             new KeywordTreeItem('Process Library', vscode.TreeItemCollapsibleState.Collapsed),
             new KeywordTreeItem('XML Library', vscode.TreeItemCollapsibleState.Collapsed)
         ];
-
-        // Add discovered file-based keyword categories
-        const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
-        const customKeywords = config.get('customKeywords', []) as any[];
-        const fileCategories = this.getFileBasedCategories(customKeywords);
-
-        // Add file-based categories at the top
-        categories.unshift(...fileCategories);
-
-        return categories;
     }
 
     private getFileBasedCategories(customKeywords: any[]): KeywordTreeItem[] {
@@ -987,7 +1188,7 @@ class RobotFrameworkKeywordProvider implements vscode.TreeDataProvider<KeywordTr
         sortedFolders.forEach(folderPath => {
             const files = folderStructure.get(folderPath)!;
 
-            // Create folder category
+            // Create folder category with arrow notation for display
             const folderDisplayName = this.formatFolderName(folderPath);
             const folderItem = new KeywordTreeItem(
                 folderDisplayName,
@@ -996,7 +1197,7 @@ class RobotFrameworkKeywordProvider implements vscode.TreeDataProvider<KeywordTr
                 'Folder'
             );
 
-            // Store folder path for later retrieval
+            // Store original folder path for later retrieval
             (folderItem as any).folderPath = folderPath;
             categories.push(folderItem);
         });
@@ -1015,12 +1216,65 @@ class RobotFrameworkKeywordProvider implements vscode.TreeDataProvider<KeywordTr
         return categories;
     }
 
+    private simplifFolderPath(folderPath: string): string {
+        if (folderPath === '.' || folderPath === '' || folderPath === 'Root') {
+            return 'Root';
+        }
+
+        // Dynamic POM pattern matching for all subdirectories
+        const pomMatch = folderPath.match(/^POM\/Keywords\/(.+)$/i);
+        if (pomMatch) {
+            const subPath = pomMatch[1];
+            // Convert UI/Generic -> UI Generic, API/Actions -> API Actions, etc.
+            return subPath.replace(/\//g, ' ');
+        }
+
+        // Libraries patterns - keep Libraries as the main category
+        if (folderPath.match(/^Libraries/i)) {
+            const parts = folderPath.split(/[\/\\]/);
+            if (parts.length > 1) {
+                // Libraries/Utilities -> Libraries Utilities, Libraries/Other -> Libraries Other
+                return parts.join(' ');
+            }
+            return 'Libraries';
+        }
+
+        // Resources patterns
+        if (folderPath.match(/^Resources/i)) {
+            const parts = folderPath.split(/[\/\\]/);
+            if (parts.length > 1) {
+                // Resources/Configurations -> Configurations, Resources/Setup -> Setup
+                return parts.slice(1).join(' ');
+            }
+            return 'Resources';
+        }
+
+        // Simple patterns
+        const simplePatterns = [
+            { pattern: /^Utilities$/i, replacement: 'Utilities' }
+        ];
+
+        for (const { pattern, replacement } of simplePatterns) {
+            if (pattern.test(folderPath)) {
+                return replacement;
+            }
+        }
+
+        // Fallback: take last meaningful parts
+        const parts = folderPath.split(/[\/\\]/);
+        if (parts.length > 2) {
+            return parts.slice(-2).join(' ');
+        }
+
+        return folderPath.replace(/[\/\\]/g, ' ');
+    }
+
     private formatFolderName(folderPath: string): string {
         if (folderPath === '.' || folderPath === '' || folderPath === 'Root') {
             return 'Root';
         }
 
-        // Replace path separators and make it more readable
+        // Convert back to arrow notation for display
         return folderPath.replace(/[\/\\]/g, ' → ');
     }
 
@@ -1032,14 +1286,22 @@ class RobotFrameworkKeywordProvider implements vscode.TreeDataProvider<KeywordTr
         const filesInFolder = new Map<string, any[]>();
 
         customKeywords.forEach(keyword => {
-            if ((keyword.source === 'python' || keyword.source === 'robot') &&
-                (keyword.folderPath === folderPath ||
-                 (folderPath === 'Root' && (keyword.folderPath === '.' || keyword.folderPath === '' || keyword.folderPath === 'Root')))) {
-                const fileName = keyword.library;
-                if (!filesInFolder.has(fileName)) {
-                    filesInFolder.set(fileName, []);
+            if (keyword.source === 'python' || keyword.source === 'robot') {
+                let keywordFolderPath = keyword.folderPath || 'Root';
+
+                // Normalize keyword folder path
+                if (keywordFolderPath === '.' || keywordFolderPath === '') {
+                    keywordFolderPath = 'Root';
                 }
-                filesInFolder.get(fileName)!.push(keyword);
+
+                if (keywordFolderPath === folderPath ||
+                    (folderPath === 'Root' && (keywordFolderPath === '.' || keywordFolderPath === '' || keywordFolderPath === 'Root'))) {
+                    const fileName = keyword.library;
+                    if (!filesInFolder.has(fileName)) {
+                        filesInFolder.set(fileName, []);
+                    }
+                    filesInFolder.get(fileName)!.push(keyword);
+                }
             }
         });
 

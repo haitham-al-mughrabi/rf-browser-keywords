@@ -52,6 +52,11 @@
         "command": "rfBrowserKeywords.addCustomKeyword",
         "title": "Add Custom Keyword",
         "icon": "$(plus)"
+      },
+      {
+        "command": "rfBrowserKeywords.importFile",
+        "title": "Import Library/Resource",
+        "icon": "$(arrow-down)"
       }
     ],
     "menus": {
@@ -70,6 +75,11 @@
           "command": "rfBrowserKeywords.copyKeyword",
           "when": "view == rfBrowserKeywords && viewItem == keyword",
           "group": "inline@3"
+        },
+        {
+          "command": "rfBrowserKeywords.importFile",
+          "when": "view == rfBrowserKeywords && viewItem == library",
+          "group": "inline@1"
         }
       ],
       "view/title": [
@@ -148,6 +158,18 @@
           "type": "array",
           "default": [],
           "description": "Paths to Robot Framework files containing custom keywords",
+          "items": {"type": "string"}
+        },
+        "robotFrameworkKeywords.projectScanPaths": {
+          "type": "array",
+          "default": [
+            "Libraries/**/*.py",
+            "POM/**/*.{robot,resource}",
+            "Utilities/**/*.{py,robot,resource}",
+            "Resources/**/*.{py,robot,resource}",
+            "*.resource"
+          ],
+          "description": "Glob patterns for scanning project keywords",
           "items": {"type": "string"}
         }
       }
