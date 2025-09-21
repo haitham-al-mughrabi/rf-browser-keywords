@@ -14,47 +14,60 @@
   ],
   "main": "./out/extension.js",
   "contributes": {
-    "views": {
-      "explorer": [
+    "viewsContainers": {
+      "activitybar": [
         {
-          "id": "rfBrowserKeywords",
-          "name": "Robot Framework Keywords"
+          "id": "rfKeywords",
+          "title": "Robot Framework",
+          "icon": "$(robot)"
+        }
+      ]
+    },
+    "views": {
+      "rfKeywords": [
+        {
+          "id": "rfProjectKeywords",
+          "name": "Project Keywords"
+        },
+        {
+          "id": "rfOfficialKeywords",
+          "name": "Official Keywords"
         }
       ]
     },
     "commands": [
       {
-        "command": "rfBrowserKeywords.insertKeyword",
+        "command": "rfKeywords.insertKeyword",
         "title": "Insert Keyword",
         "icon": "$(add)"
       },
       {
-        "command": "rfBrowserKeywords.copyKeyword",
+        "command": "rfKeywords.copyKeyword",
         "title": "Copy Keyword",
         "icon": "$(copy)"
       },
       {
-        "command": "rfBrowserKeywords.customizeKeyword",
+        "command": "rfKeywords.customizeKeyword",
         "title": "Customize & Insert Keyword",
         "icon": "$(edit)"
       },
       {
-        "command": "rfBrowserKeywords.refresh",
+        "command": "rfKeywords.refresh",
         "title": "Refresh",
         "icon": "$(refresh)"
       },
       {
-        "command": "rfBrowserKeywords.editKeywordDefaults",
+        "command": "rfKeywords.editKeywordDefaults",
         "title": "Edit Keyword Defaults",
         "icon": "$(settings)"
       },
       {
-        "command": "rfBrowserKeywords.addCustomKeyword",
+        "command": "rfKeywords.addCustomKeyword",
         "title": "Add Custom Keyword",
         "icon": "$(plus)"
       },
       {
-        "command": "rfBrowserKeywords.importFile",
+        "command": "rfKeywords.importFile",
         "title": "Import Library/Resource",
         "icon": "$(arrow-down)"
       }
@@ -62,40 +75,40 @@
     "menus": {
       "view/item/context": [
         {
-          "command": "rfBrowserKeywords.insertKeyword",
-          "when": "view == rfBrowserKeywords && viewItem == keyword",
+          "command": "rfKeywords.insertKeyword",
+          "when": "(view == rfProjectKeywords || view == rfOfficialKeywords) && viewItem == keyword",
           "group": "inline@1"
         },
         {
-          "command": "rfBrowserKeywords.customizeKeyword",
-          "when": "view == rfBrowserKeywords && viewItem == keyword",
+          "command": "rfKeywords.customizeKeyword",
+          "when": "(view == rfProjectKeywords || view == rfOfficialKeywords) && viewItem == keyword",
           "group": "inline@2"
         },
         {
-          "command": "rfBrowserKeywords.copyKeyword",
-          "when": "view == rfBrowserKeywords && viewItem == keyword",
+          "command": "rfKeywords.copyKeyword",
+          "when": "(view == rfProjectKeywords || view == rfOfficialKeywords) && viewItem == keyword",
           "group": "inline@3"
         },
         {
-          "command": "rfBrowserKeywords.importFile",
-          "when": "view == rfBrowserKeywords && viewItem == library",
+          "command": "rfKeywords.importFile",
+          "when": "view == rfProjectKeywords && viewItem == library",
           "group": "inline@1"
         }
       ],
       "view/title": [
         {
-          "command": "rfBrowserKeywords.addCustomKeyword",
-          "when": "view == rfBrowserKeywords",
+          "command": "rfKeywords.addCustomKeyword",
+          "when": "view == rfProjectKeywords",
           "group": "navigation@1"
         },
         {
-          "command": "rfBrowserKeywords.editKeywordDefaults",
-          "when": "view == rfBrowserKeywords",
+          "command": "rfKeywords.editKeywordDefaults",
+          "when": "view == rfProjectKeywords || view == rfOfficialKeywords",
           "group": "navigation@2"
         },
         {
-          "command": "rfBrowserKeywords.refresh",
-          "when": "view == rfBrowserKeywords",
+          "command": "rfKeywords.refresh",
+          "when": "view == rfProjectKeywords",
           "group": "navigation@3"
         }
       ]

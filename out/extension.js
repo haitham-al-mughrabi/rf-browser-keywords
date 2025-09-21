@@ -5,17 +5,20 @@ const vscode = require("vscode");
 const fs = require("fs");
 const path = require("path");
 function activate(context) {
-    const provider = new RobotFrameworkKeywordProvider();
-    vscode.window.registerTreeDataProvider('rfBrowserKeywords', provider);
+    const projectProvider = new RobotFrameworkKeywordProvider('project');
+    const officialProvider = new RobotFrameworkKeywordProvider('official');
+    vscode.window.registerTreeDataProvider('rfProjectKeywords', projectProvider);
+    vscode.window.registerTreeDataProvider('rfOfficialKeywords', officialProvider);
     // Clear old keywords and scan workspace for keywords on activation
     const clearAndScan = async () => {
         const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
         await config.update('customKeywords', [], vscode.ConfigurationTarget.Global);
         await scanWorkspaceKeywords();
-        provider.refresh();
+        projectProvider.refresh();
+        officialProvider.refresh();
     };
     clearAndScan();
-    vscode.commands.registerCommand('rfBrowserKeywords.insertKeyword', (item) => {
+    vscode.commands.registerCommand('rfKeywords.insertKeyword', (item) => {
         if (item.implementation) {
             const editor = vscode.window.activeTextEditor;
             if (editor) {
@@ -28,13 +31,13 @@ function activate(context) {
             }
         }
     });
-    vscode.commands.registerCommand('rfBrowserKeywords.copyKeyword', (item) => {
+    vscode.commands.registerCommand('rfKeywords.copyKeyword', (item) => {
         if (item.implementation) {
             vscode.env.clipboard.writeText(item.implementation);
             vscode.window.showInformationMessage(`Copied: ${item.label}`);
         }
     });
-    vscode.commands.registerCommand('rfBrowserKeywords.customizeKeyword', async (item) => {
+    vscode.commands.registerCommand('rfKeywords.customizeKeyword', async (item) => {
         if (item.implementation) {
             const customizedKeyword = await customizeKeywordParameters(item);
             if (customizedKeyword) {
@@ -50,22 +53,24 @@ function activate(context) {
             }
         }
     });
-    vscode.commands.registerCommand('rfBrowserKeywords.refresh', async () => {
+    vscode.commands.registerCommand('rfKeywords.refresh', async () => {
         vscode.window.showInformationMessage('Scanning workspace for keywords...');
         // Clear existing custom keywords to force fresh scan
         const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
         await config.update('customKeywords', [], vscode.ConfigurationTarget.Global);
         await scanWorkspaceKeywords();
-        provider.refresh();
+        projectProvider.refresh();
+        officialProvider.refresh();
     });
-    vscode.commands.registerCommand('rfBrowserKeywords.editKeywordDefaults', async () => {
+    vscode.commands.registerCommand('rfKeywords.editKeywordDefaults', async () => {
         await editKeywordDefaults();
     });
-    vscode.commands.registerCommand('rfBrowserKeywords.addCustomKeyword', async () => {
+    vscode.commands.registerCommand('rfKeywords.addCustomKeyword', async () => {
         await addCustomKeyword();
-        provider.refresh();
+        projectProvider.refresh();
+        officialProvider.refresh();
     });
-    vscode.commands.registerCommand('rfBrowserKeywords.importFile', async (item) => {
+    vscode.commands.registerCommand('rfKeywords.importFile', async (item) => {
         await importLibraryOrResource(item);
     });
 }
@@ -797,7 +802,7 @@ class KeywordTreeItem extends vscode.TreeItem {
             this.description = library;
             this.contextValue = 'keyword';
             this.command = {
-                command: 'rfBrowserKeywords.copyKeyword',
+                command: 'rfKeywords.copyKeyword',
                 title: 'Copy Keyword',
                 arguments: [this]
             };
@@ -864,7 +869,8 @@ class KeywordTreeItem extends vscode.TreeItem {
     }
 }
 class RobotFrameworkKeywordProvider {
-    constructor() {
+    constructor(viewType) {
+        this.viewType = viewType;
         this._onDidChangeTreeData = new vscode.EventEmitter();
         this.onDidChangeTreeData = this._onDidChangeTreeData.event;
     }
@@ -876,14 +882,12 @@ class RobotFrameworkKeywordProvider {
     }
     getChildren(element) {
         if (!element) {
-            return Promise.resolve(this.getLibraryCategories());
-        }
-        // Check for contextValue first (new structure)
-        if (element.library === 'project-root') {
-            return Promise.resolve(this.getProjectKeywordCategories());
-        }
-        if (element.library === 'official-root') {
-            return Promise.resolve(this.getOfficialKeywordCategories());
+            if (this.viewType === 'project') {
+                return Promise.resolve(this.getProjectKeywordCategories());
+            }
+            else {
+                return Promise.resolve(this.getOfficialKeywordCategories());
+            }
         }
         switch (element.label) {
             case 'Custom Keywords':
@@ -947,23 +951,12 @@ class RobotFrameworkKeywordProvider {
                 }
         }
     }
-    getLibraryCategories() {
-        const categories = [];
-        // Add Project Keywords section
-        const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
-        const customKeywords = config.get('customKeywords', []);
-        if (customKeywords.length > 0) {
-            const projectKeywordsItem = new KeywordTreeItem('Project Keywords', vscode.TreeItemCollapsibleState.Expanded, undefined, 'project-root');
-            categories.push(projectKeywordsItem);
-        }
-        // Add Official Keywords section
-        const officialKeywordsItem = new KeywordTreeItem('Official Keywords', vscode.TreeItemCollapsibleState.Collapsed, undefined, 'official-root');
-        categories.push(officialKeywordsItem);
-        return categories;
-    }
     getProjectKeywordCategories() {
         const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
         const customKeywords = config.get('customKeywords', []);
+        if (customKeywords.length === 0) {
+            return [new KeywordTreeItem('No project keywords found', vscode.TreeItemCollapsibleState.None, undefined, 'Empty')];
+        }
         return this.getFileBasedCategories(customKeywords);
     }
     getOfficialKeywordCategories() {
