@@ -168,6 +168,23 @@ async function importLibraryOrResource(item: KeywordTreeItem): Promise<void> {
             const importType = isPythonFile ? 'Library' : 'Resource';
             const importStatement = `${importType}    ${relativeTargetPath}`;
 
+            // Check if import already exists
+            const existingImport = checkExistingImport(editor, importType, relativeTargetPath);
+            if (existingImport.exists) {
+                const action = await vscode.window.showWarningMessage(
+                    `Import already exists at line ${existingImport.line}: "${existingImport.statement}"`,
+                    'Show Line', 'OK'
+                );
+
+                if (action === 'Show Line') {
+                    // Navigate to the existing import line
+                    const position = new vscode.Position(existingImport.line! - 1, 0);
+                    editor.selection = new vscode.Selection(position, position);
+                    editor.revealRange(new vscode.Range(position, position), vscode.TextEditorRevealType.InCenter);
+                }
+                return;
+            }
+
             // Insert the import statement in the Settings section
             await insertImportStatement(editor, importStatement);
             vscode.window.showInformationMessage(`Imported: ${importStatement}`);
@@ -197,6 +214,23 @@ async function importLibraryOrResource(item: KeywordTreeItem): Promise<void> {
     const isPythonFile = targetFilePath.endsWith('.py');
     const importType = isPythonFile ? 'Library' : 'Resource';
     const importStatement = `${importType}    ${relativeTargetPath}`;
+
+    // Check if import already exists
+    const existingImport = checkExistingImport(editor, importType, relativeTargetPath);
+    if (existingImport.exists) {
+        const action = await vscode.window.showWarningMessage(
+            `Import already exists at line ${existingImport.line}: "${existingImport.statement}"`,
+            'Show Line', 'OK'
+        );
+
+        if (action === 'Show Line') {
+            // Navigate to the existing import line
+            const position = new vscode.Position(existingImport.line! - 1, 0);
+            editor.selection = new vscode.Selection(position, position);
+            editor.revealRange(new vscode.Range(position, position), vscode.TextEditorRevealType.InCenter);
+        }
+        return;
+    }
 
     // Insert the import statement in the Settings section
     await insertImportStatement(editor, importStatement);
@@ -248,6 +282,23 @@ async function importVariableFile(item: VariableTreeItem): Promise<void> {
     const isPythonFile = matchingVariable.filePath.endsWith('.py');
     const importType = isPythonFile ? 'Variables' : 'Resource';
     const importStatement = `${importType}    ${relativeTargetPath}`;
+
+    // Check if import already exists
+    const existingImport = checkExistingImport(editor, importType, relativeTargetPath);
+    if (existingImport.exists) {
+        const action = await vscode.window.showWarningMessage(
+            `Import already exists at line ${existingImport.line}: "${existingImport.statement}"`,
+            'Show Line', 'OK'
+        );
+
+        if (action === 'Show Line') {
+            // Navigate to the existing import line
+            const position = new vscode.Position(existingImport.line! - 1, 0);
+            editor.selection = new vscode.Selection(position, position);
+            editor.revealRange(new vscode.Range(position, position), vscode.TextEditorRevealType.InCenter);
+        }
+        return;
+    }
 
     // Insert the import statement in the Settings section
     await insertImportStatement(editor, importStatement);
@@ -312,6 +363,71 @@ async function insertImportStatement(editor: vscode.TextEditor, importStatement:
     await editor.edit(editBuilder => {
         editBuilder.insert(insertPosition, importWithNewline);
     });
+}
+
+function checkExistingImport(editor: vscode.TextEditor, importType: string, importPath: string): { exists: boolean; line?: number; statement?: string } {
+    const document = editor.document;
+    const text = document.getText();
+    const lines = text.split('\n');
+
+    let inSettingsSection = false;
+    let settingsEndLine = -1;
+
+    // Parse the Settings section to find existing imports
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+
+        // Check for Settings section
+        if (line.match(/^\*+\s*Settings?\s*\**/i)) {
+            inSettingsSection = true;
+            continue;
+        }
+
+        // Check for other sections (end of Settings)
+        if (inSettingsSection && line.match(/^\*+\s*(Test Cases?|Keywords?|Variables?|Tasks?)\s*\**/i)) {
+            settingsEndLine = i;
+            break;
+        }
+
+        // If we're in the Settings section, check for matching imports
+        if (inSettingsSection && settingsEndLine === -1) {
+            // Match import statements: Library/Resource/Variables    path
+            const importMatch = line.match(/^(Library|Resource|Variables)\s+(.+)$/i);
+            if (importMatch) {
+                const existingImportType = importMatch[1];
+                const existingImportPath = importMatch[2].trim();
+
+                // Check for exact match (case-insensitive)
+                if (existingImportType.toLowerCase() === importType.toLowerCase() &&
+                    existingImportPath === importPath) {
+                    return {
+                        exists: true,
+                        line: i + 1, // Convert to 1-based line number
+                        statement: line
+                    };
+                }
+
+                // Also check for path variations (with/without file extension, relative paths)
+                const normalizeImportPath = (path: string) => {
+                    // Remove file extension for comparison
+                    const withoutExt = path.replace(/\.(py|robot|resource)$/, '');
+                    // Normalize path separators
+                    return withoutExt.replace(/\\/g, '/').toLowerCase();
+                };
+
+                if (existingImportType.toLowerCase() === importType.toLowerCase() &&
+                    normalizeImportPath(existingImportPath) === normalizeImportPath(importPath)) {
+                    return {
+                        exists: true,
+                        line: i + 1,
+                        statement: line
+                    };
+                }
+            }
+        }
+    }
+
+    return { exists: false };
 }
 
 async function customizeKeywordParameters(item: KeywordTreeItem): Promise<string | undefined> {
