@@ -7,10 +7,12 @@ export function activate(context: vscode.ExtensionContext) {
     const officialProvider = new RobotFrameworkKeywordProvider('official');
     const variablesProvider = new VariablesProvider();
     const customizerProvider = new KeywordCustomizerProvider();
+    const documentationProvider = new DocumentationProvider();
     vscode.window.registerTreeDataProvider('rfProjectKeywords', projectProvider);
     vscode.window.registerTreeDataProvider('rfOfficialKeywords', officialProvider);
     vscode.window.registerTreeDataProvider('rfVariables', variablesProvider);
     vscode.window.registerTreeDataProvider('rfKeywordCustomizer', customizerProvider);
+    vscode.window.registerTreeDataProvider('rfDocumentation', documentationProvider);
 
     // Clear old keywords and scan workspace for keywords on activation
     const clearAndScan = async () => {
@@ -53,6 +55,19 @@ export function activate(context: vscode.ExtensionContext) {
             );
             vscode.env.clipboard.writeText(robotKeywordCall);
             vscode.window.showInformationMessage(`Copied: ${item.label}`);
+        }
+    });
+
+    // New command that shows both documentation and loads customizer
+    vscode.commands.registerCommand('rfKeywords.showKeywordDetails', async (item: KeywordTreeItem) => {
+        if (item.implementation) {
+            // Show documentation
+            await documentationProvider.showKeywordDocumentation(item);
+
+            // Load into customizer
+            await customizerProvider.setKeyword(item);
+
+            vscode.window.showInformationMessage(`Loaded: ${item.label} into customizer and documentation`);
         }
     });
 
@@ -179,6 +194,33 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('rfCustomizer.clear', async () => {
         await customizerProvider.clearKeyword();
         vscode.window.showInformationMessage('Cleared keyword customizer');
+    });
+
+    // Documentation commands
+    vscode.commands.registerCommand('rfDocumentation.showKeywordDoc', async (item: KeywordTreeItem) => {
+        if (item) {
+            await documentationProvider.showKeywordDocumentation(item);
+            vscode.window.showInformationMessage(`Showing documentation for: ${item.label}`);
+        } else {
+            vscode.window.showWarningMessage('No keyword selected for documentation');
+        }
+    });
+
+    vscode.commands.registerCommand('rfDocumentation.copyDocumentation', () => {
+        const documentation = documentationProvider.getCurrentDocumentation();
+        if (documentation) {
+            const argText = documentation.arguments ? documentation.arguments.map((arg: any) => `- ${arg.name}: ${arg.type}${arg.defaultValue ? ` (default: ${arg.defaultValue})` : ''}`).join('\n') : 'None';
+            const docText = `${documentation.name} (${documentation.library})\n\n${documentation.documentation}\n\nArguments:\n${argText}\n\nSource: ${documentation.source}`;
+            vscode.env.clipboard.writeText(docText);
+            vscode.window.showInformationMessage('Copied documentation to clipboard');
+        } else {
+            vscode.window.showWarningMessage('No documentation available to copy');
+        }
+    });
+
+    vscode.commands.registerCommand('rfDocumentation.clear', () => {
+        documentationProvider.clearDocumentation();
+        vscode.window.showInformationMessage('Cleared documentation view');
     });
 }
 
@@ -1233,12 +1275,14 @@ function extractRobotKeywords(content: string, filePath: string, basePath?: stri
                 name: keywordWithArgs.name,
                 implementation: keywordWithArgs.implementation,
                 library: fileName,
-                description: `${fileExtension === '.resource' ? 'Resource' : 'Robot'} keyword from ${fileName}${fileExtension}`,
+                description: keywordWithArgs.documentation || `${fileExtension === '.resource' ? 'Resource' : 'Robot'} keyword from ${fileName}${fileExtension}`,
+                documentation: keywordWithArgs.documentation,
                 source: 'robot',
                 filePath: filePath,
                 fileType: fileExtension === '.resource' ? 'resource' : 'robot',
                 folderPath: folderPath
             };
+
         }
     }
 
@@ -1250,13 +1294,17 @@ function extractRobotKeywords(content: string, filePath: string, basePath?: stri
     return keywords;
 }
 
-function extractKeywordArguments(keywordLine: string, allLines: string[], currentIndex: number): { name: string, implementation: string } {
+function extractKeywordArguments(keywordLine: string, allLines: string[], currentIndex: number): { name: string, implementation: string, documentation?: string } {
     const keywordName = keywordLine.trim();
     const args: string[] = [];
+    let documentation = '';
 
-    // Look for [Arguments] in the next few lines
+    // Look for [Arguments] and [Documentation] in the next few lines
     let foundArguments = false;
-    for (let i = currentIndex + 1; i < Math.min(currentIndex + 20, allLines.length); i++) {
+    let foundDocumentation = false;
+    let docLines: string[] = [];
+
+    for (let i = currentIndex + 1; i < Math.min(currentIndex + 30, allLines.length); i++) {
         const line = allLines[i].trim();
         const originalLine = allLines[i];
 
@@ -1264,6 +1312,30 @@ function extractKeywordArguments(keywordLine: string, allLines: string[], curren
         if ((!originalLine.startsWith(' ') && !originalLine.startsWith('\t') && line !== '') ||
             line.match(/^\*+/)) {
             break;
+        }
+
+        // Check for [Documentation] tag
+        if (line.match(/^\[Documentation\]/i)) {
+            foundDocumentation = true;
+            const docLine = line.replace(/^\[Documentation\]/i, '').trim();
+            if (docLine) {
+                docLines.push(docLine);
+            }
+            continue;
+        }
+
+        // If we found [Documentation], look for continuation lines with ...
+        if (foundDocumentation && line.startsWith('...')) {
+            const continuationLine = line.replace(/^\.\.\./, '').trim();
+            if (continuationLine) {
+                docLines.push(continuationLine);
+            }
+            continue;
+        }
+
+        // If we found [Documentation] but this line doesn't start with ..., we're done with documentation
+        if (foundDocumentation && !line.startsWith('...') && line !== '') {
+            foundDocumentation = false;
         }
 
         // Check for [Arguments] tag
@@ -1290,8 +1362,13 @@ function extractKeywordArguments(keywordLine: string, allLines: string[], curren
 
         // If we found [Arguments] but this line doesn't start with ..., we're done with arguments
         if (foundArguments && !line.startsWith('...') && line !== '') {
-            break;
+            foundArguments = false;
         }
+    }
+
+    // Join documentation lines
+    if (docLines.length > 0) {
+        documentation = docLines.join(' ').trim();
     }
 
     // Create implementation with arguments
@@ -1301,7 +1378,8 @@ function extractKeywordArguments(keywordLine: string, allLines: string[], curren
 
     return {
         name: keywordName,
-        implementation: implementation
+        implementation: implementation,
+        documentation: documentation || undefined
     };
 }
 
@@ -1511,21 +1589,42 @@ function mergeKeywords(existing: any[], discovered: any[]): any[] {
 export function deactivate() {}
 
 class KeywordTreeItem extends vscode.TreeItem {
+    public readonly name?: string;
+    public readonly documentation?: string;
+    public readonly description?: string;
+    public readonly source?: string;
+    public readonly filePath?: string;
+    public readonly tags?: string[];
+    public readonly returnType?: string;
+
     constructor(
         public readonly label: string,
         public readonly collapsibleState: vscode.TreeItemCollapsibleState,
         public readonly implementation?: string,
-        public readonly library?: string
+        public readonly library?: string,
+        keywordData?: any
     ) {
         super(label, collapsibleState);
 
+        // Store additional keyword data if provided
+        if (keywordData) {
+            this.name = keywordData.name;
+            this.documentation = keywordData.documentation;
+            this.description = keywordData.description;
+            this.source = keywordData.source;
+            this.filePath = keywordData.filePath;
+            this.tags = keywordData.tags;
+            this.returnType = keywordData.returnType;
+        }
+
         if (implementation) {
             this.tooltip = `${this.label}: Click to copy, Right-click for more options`;
-            this.description = library;
+            // Use the keyword documentation as description if available, otherwise fallback to library
+            super.description = this.documentation || library;
             this.contextValue = 'keyword';
             this.command = {
-                command: 'rfKeywords.copyKeyword',
-                title: 'Copy Keyword',
+                command: 'rfKeywords.showKeywordDetails',
+                title: 'Show Keyword Details',
                 arguments: [this]
             };
 
@@ -1669,6 +1768,62 @@ class KeywordCustomizerTreeItem extends vscode.TreeItem {
         } else {
             this.tooltip = this.label;
             this.iconPath = new vscode.ThemeIcon('folder');
+        }
+    }
+}
+
+class DocumentationTreeItem extends vscode.TreeItem {
+    constructor(
+        public readonly label: string,
+        public readonly collapsibleState: vscode.TreeItemCollapsibleState,
+        public readonly documentationData?: any,
+        public readonly itemType: 'keyword' | 'section' | 'argument' | 'tag' | 'source' | 'description' = 'description'
+    ) {
+        super(label, collapsibleState);
+
+        this.contextValue = itemType;
+
+        // Set icons based on item type
+        switch (itemType) {
+            case 'keyword':
+                this.iconPath = new vscode.ThemeIcon('symbol-method');
+                break;
+            case 'section':
+                this.iconPath = new vscode.ThemeIcon('symbol-namespace');
+                break;
+            case 'argument':
+                this.iconPath = new vscode.ThemeIcon('symbol-parameter');
+                break;
+            case 'tag':
+                this.iconPath = new vscode.ThemeIcon('tag');
+                break;
+            case 'source':
+                this.iconPath = new vscode.ThemeIcon('file-code');
+                break;
+            case 'description':
+            default:
+                this.iconPath = new vscode.ThemeIcon('note');
+                break;
+        }
+
+        // Set tooltip based on type
+        if (documentationData) {
+            switch (itemType) {
+                case 'keyword':
+                    this.tooltip = `${documentationData.name} from ${documentationData.library}`;
+                    break;
+                case 'argument':
+                    this.tooltip = `Argument: ${documentationData.name} (${documentationData.type || 'any'})`;
+                    break;
+                case 'source':
+                    this.tooltip = `Source: ${documentationData.filePath}`;
+                    break;
+                default:
+                    this.tooltip = this.label;
+                    break;
+            }
+        } else {
+            this.tooltip = this.label;
         }
     }
 }
@@ -2001,7 +2156,8 @@ class RobotFrameworkKeywordProvider implements vscode.TreeDataProvider<KeywordTr
                 keyword.name,
                 vscode.TreeItemCollapsibleState.None,
                 keyword.implementation,
-                baseFileName
+                baseFileName,
+                keyword  // Pass the full keyword object
             )
         );
     }
@@ -2018,7 +2174,8 @@ class RobotFrameworkKeywordProvider implements vscode.TreeDataProvider<KeywordTr
                 keyword.name,
                 vscode.TreeItemCollapsibleState.None,
                 keyword.implementation,
-                keyword.library || 'Custom'
+                keyword.library || 'Custom',
+                keyword  // Pass the full keyword object
             )
         );
     }
@@ -2752,6 +2909,464 @@ class KeywordCustomizerProvider implements vscode.TreeDataProvider<KeywordCustom
         }
 
         return keywordCall;
+    }
+
+    async setKeyword(keyword: KeywordTreeItem): Promise<void> {
+        if (!keyword.implementation) {
+            return;
+        }
+
+        // Extract parameters from the keyword implementation
+        const parameters = extractKeywordParameters(keyword.implementation);
+
+        const keywordData = {
+            name: keyword.label,
+            implementation: keyword.implementation,
+            library: keyword.library || 'Unknown',
+            parameters: parameters
+        };
+
+        const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
+        await config.update('currentCustomizingKeyword', keywordData, vscode.ConfigurationTarget.Global);
+        this.refresh();
+    }
+}
+
+class DocumentationProvider implements vscode.TreeDataProvider<DocumentationTreeItem> {
+    private _onDidChangeTreeData: vscode.EventEmitter<DocumentationTreeItem | undefined | null | void> = new vscode.EventEmitter<DocumentationTreeItem | undefined | null | void>();
+    readonly onDidChangeTreeData: vscode.Event<DocumentationTreeItem | undefined | null | void> = this._onDidChangeTreeData.event;
+
+    refresh(): void {
+        this._onDidChangeTreeData.fire();
+    }
+
+    getTreeItem(element: DocumentationTreeItem): vscode.TreeItem {
+        return element;
+    }
+
+    getChildren(element?: DocumentationTreeItem): Thenable<DocumentationTreeItem[]> {
+        if (!element) {
+            return Promise.resolve(this.getRootItems());
+        }
+
+        // Return children based on element type
+        switch (element.itemType) {
+            case 'keyword':
+                return Promise.resolve(this.getKeywordSections());
+            case 'section':
+                return Promise.resolve(this.getSectionItems(element.label));
+            default:
+                return Promise.resolve([]);
+        }
+    }
+
+    private getRootItems(): DocumentationTreeItem[] {
+        const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
+        const currentKeyword = config.get('currentDocumentationKeyword') as any;
+
+        if (!currentKeyword) {
+            return [new DocumentationTreeItem(
+                'No keyword selected for documentation',
+                vscode.TreeItemCollapsibleState.None
+            )];
+        }
+
+        return [new DocumentationTreeItem(
+            `${currentKeyword.name} (${currentKeyword.library})`,
+            vscode.TreeItemCollapsibleState.Expanded,
+            currentKeyword,
+            'keyword'
+        )];
+    }
+
+    private getKeywordSections(): DocumentationTreeItem[] {
+        const sections: DocumentationTreeItem[] = [];
+
+        sections.push(new DocumentationTreeItem(
+            'Description',
+            vscode.TreeItemCollapsibleState.Expanded,
+            undefined,
+            'section'
+        ));
+
+        sections.push(new DocumentationTreeItem(
+            'Arguments',
+            vscode.TreeItemCollapsibleState.Expanded,
+            undefined,
+            'section'
+        ));
+
+        sections.push(new DocumentationTreeItem(
+            'Source Information',
+            vscode.TreeItemCollapsibleState.Expanded,
+            undefined,
+            'section'
+        ));
+
+        sections.push(new DocumentationTreeItem(
+            'Tags',
+            vscode.TreeItemCollapsibleState.Collapsed,
+            undefined,
+            'section'
+        ));
+
+        return sections;
+    }
+
+    private getSectionItems(sectionName: string): DocumentationTreeItem[] {
+        const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
+        const currentKeyword = config.get('currentDocumentationKeyword') as any;
+
+        if (!currentKeyword) {
+            return [];
+        }
+
+        switch (sectionName) {
+            case 'Description':
+                return this.getDescriptionItems(currentKeyword);
+            case 'Arguments':
+                return this.getArgumentItems(currentKeyword);
+            case 'Source Information':
+                return this.getSourceItems(currentKeyword);
+            case 'Tags':
+                return this.getTagItems(currentKeyword);
+            default:
+                return [];
+        }
+    }
+
+    private getDescriptionItems(keyword: any): DocumentationTreeItem[] {
+        const items: DocumentationTreeItem[] = [];
+
+        // Split documentation into lines for better display
+        const documentation = keyword.documentation || 'No documentation available';
+        const lines = documentation.split('\n').filter((line: string) => line.trim());
+
+        if (lines.length === 0) {
+            return [new DocumentationTreeItem(
+                'No documentation available',
+                vscode.TreeItemCollapsibleState.None,
+                undefined,
+                'description'
+            )];
+        }
+
+        // If single line, show as is; if multiple lines, show each line
+        if (lines.length === 1) {
+            return [new DocumentationTreeItem(
+                lines[0],
+                vscode.TreeItemCollapsibleState.None,
+                undefined,
+                'description'
+            )];
+        }
+
+        return lines.map((line: string, index: number) => new DocumentationTreeItem(
+            `${index + 1}. ${line}`,
+            vscode.TreeItemCollapsibleState.None,
+            undefined,
+            'description'
+        ));
+    }
+
+    private getArgumentItems(keyword: any): DocumentationTreeItem[] {
+        if (!keyword.arguments || keyword.arguments.length === 0) {
+            return [new DocumentationTreeItem(
+                'No arguments',
+                vscode.TreeItemCollapsibleState.None,
+                undefined,
+                'argument'
+            )];
+        }
+
+        return keyword.arguments.map((arg: any) => {
+            const argInfo = typeof arg === 'string' ? { name: arg, type: 'any' } : arg;
+            const label = argInfo.defaultValue ?
+                `${argInfo.name}=${argInfo.defaultValue} (${argInfo.type || 'any'})` :
+                `${argInfo.name} (${argInfo.type || 'any'})`;
+
+            return new DocumentationTreeItem(
+                label,
+                vscode.TreeItemCollapsibleState.None,
+                argInfo,
+                'argument'
+            );
+        });
+    }
+
+    private getSourceItems(keyword: any): DocumentationTreeItem[] {
+        const items: DocumentationTreeItem[] = [];
+
+        if (keyword.library) {
+            items.push(new DocumentationTreeItem(
+                `Library: ${keyword.library}`,
+                vscode.TreeItemCollapsibleState.None,
+                keyword,
+                'source'
+            ));
+        }
+
+        if (keyword.filePath) {
+            items.push(new DocumentationTreeItem(
+                `File: ${path.basename(keyword.filePath)}`,
+                vscode.TreeItemCollapsibleState.None,
+                keyword,
+                'source'
+            ));
+        }
+
+        if (keyword.source) {
+            items.push(new DocumentationTreeItem(
+                `Source Type: ${keyword.source}`,
+                vscode.TreeItemCollapsibleState.None,
+                keyword,
+                'source'
+            ));
+        }
+
+        if (keyword.returnType) {
+            items.push(new DocumentationTreeItem(
+                `Returns: ${keyword.returnType}`,
+                vscode.TreeItemCollapsibleState.None,
+                keyword,
+                'source'
+            ));
+        }
+
+        return items.length > 0 ? items : [new DocumentationTreeItem(
+            'No source information available',
+            vscode.TreeItemCollapsibleState.None,
+            undefined,
+            'source'
+        )];
+    }
+
+    private getTagItems(keyword: any): DocumentationTreeItem[] {
+        if (!keyword.tags || keyword.tags.length === 0) {
+            return [new DocumentationTreeItem(
+                'No tags',
+                vscode.TreeItemCollapsibleState.None,
+                undefined,
+                'tag'
+            )];
+        }
+
+        return keyword.tags.map((tag: string) => new DocumentationTreeItem(
+            tag,
+            vscode.TreeItemCollapsibleState.None,
+            { tag },
+            'tag'
+        ));
+    }
+
+    async setCurrentKeyword(keyword: any): Promise<void> {
+        // Extract comprehensive documentation
+        const documentationData = await this.extractKeywordDocumentation(keyword);
+
+        const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
+        await config.update('currentDocumentationKeyword', documentationData, vscode.ConfigurationTarget.Global);
+        this.refresh();
+    }
+
+
+    private async extractKeywordDocumentation(keyword: any): Promise<any> {
+        // Enhanced documentation extraction
+        const documentation = {
+            name: keyword.name || keyword.label,
+            library: keyword.library || 'Unknown',
+            documentation: keyword.documentation || keyword.description || 'No documentation available',
+            arguments: [] as any[],
+            source: keyword.source || 'unknown',
+            filePath: keyword.filePath || '',
+            returnType: keyword.returnType || null,
+            tags: keyword.tags || []
+        };
+
+        // Extract arguments from implementation if available
+        if (keyword.implementation) {
+            const extractedArgs = this.extractArgumentsFromImplementation(keyword.implementation);
+            documentation.arguments = extractedArgs;
+        }
+
+        // Try to extract more documentation from source file if available, but only if we don't have good documentation already
+        if (keyword.filePath && fs.existsSync(keyword.filePath) &&
+            (!keyword.documentation || documentation.documentation === 'No documentation available')) {
+            try {
+                const fileDoc = await this.extractDocumentationFromFile(keyword.filePath, keyword.name || keyword.label);
+                if (fileDoc && fileDoc.documentation) {
+                    // Use file documentation only if we don't have better documentation already
+                    documentation.documentation = fileDoc.documentation;
+                    documentation.arguments = fileDoc.arguments || documentation.arguments;
+                    documentation.returnType = fileDoc.returnType || documentation.returnType;
+                    documentation.tags = fileDoc.tags || documentation.tags;
+                }
+            } catch (error) {
+                console.warn('Failed to extract documentation from file:', keyword.filePath, error);
+            }
+        }
+
+        // If we still don't have good documentation, try to parse from implementation
+        if (documentation.documentation === 'No documentation available' && keyword.implementation) {
+            // Look for Robot Framework [Documentation] section
+            const docMatch = keyword.implementation.match(/\[Documentation\]\s*(.*?)(?:\n\s*\[|\n\s*\w|\n\s*$)/s);
+            if (docMatch) {
+                documentation.documentation = docMatch[1].trim().replace(/\n\s*\.\.\.\s*/g, ' ');
+            }
+        }
+
+        return documentation;
+    }
+
+    private extractArgumentsFromImplementation(implementation: string): any[] {
+        // Extract from [Arguments] section only - don't guess from placeholders
+        const argumentsMatch = implementation.match(/\[Arguments\]\s*(.*?)(?:\n|$)/i);
+        if (argumentsMatch) {
+            const args = argumentsMatch[1].trim().split(/\s+/).filter(arg => arg.trim());
+            return args.map(arg => {
+                const match = arg.match(/\$\{([^}]+)\}(?:=(.*))?/);
+                if (match) {
+                    return {
+                        name: match[1],
+                        type: 'any',
+                        defaultValue: match[2] || null
+                    };
+                }
+                return { name: arg, type: 'any' };
+            });
+        }
+
+        // Return empty array if no explicit [Arguments] section found
+        return [];
+    }
+
+    private async extractDocumentationFromFile(filePath: string, keywordName: string): Promise<any | null> {
+        try {
+            if (!fs.existsSync(filePath)) {
+                return null;
+            }
+
+            const content = fs.readFileSync(filePath, 'utf-8');
+
+            if (filePath.endsWith('.py')) {
+                return this.extractPythonDocumentation(content, keywordName);
+            } else if (filePath.endsWith('.robot') || filePath.endsWith('.resource')) {
+                return this.extractRobotDocumentation(content, keywordName);
+            }
+        } catch (error) {
+            console.error('Error extracting documentation from file:', error);
+        }
+
+        return null;
+    }
+
+    private extractPythonDocumentation(content: string, keywordName: string): any | null {
+        // Look for function/method definition and docstring
+        const functionRegex = new RegExp(`def\\s+${keywordName}\\s*\\([^)]*\\):[\\s\\S]*?(?=def\\s|class\\s|$)`, 'i');
+        const match = content.match(functionRegex);
+
+        if (match) {
+            const functionContent = match[0];
+
+            // Extract docstring
+            const docstringMatch = functionContent.match(/"""([^"]*)"""|'''([^']*)'''/s);
+            const documentation = docstringMatch ? (docstringMatch[1] || docstringMatch[2]).trim() : null;
+
+            // Extract parameters from function signature
+            const paramsMatch = functionContent.match(/def\s+\w+\s*\(([^)]*)\)/);
+            let args: any[] = [];
+
+            if (paramsMatch) {
+                const params = paramsMatch[1].split(',').map(p => p.trim()).filter(p => p && p !== 'self');
+                args = params.map(param => {
+                    const [name, defaultValue] = param.split('=').map(p => p.trim());
+                    return {
+                        name: name.replace(/^\*+/, ''), // Remove *args, **kwargs indicators
+                        type: 'any',
+                        defaultValue: defaultValue || null
+                    };
+                });
+            }
+
+            return {
+                documentation,
+                arguments: args,
+                returnType: null, // Could be enhanced to parse return type hints
+                tags: []
+            };
+        }
+
+        return null;
+    }
+
+    private extractRobotDocumentation(content: string, keywordName: string): any | null {
+        // Look for keyword definition in Robot Framework file
+        const keywordRegex = new RegExp(`^${keywordName}\\s*$[\\s\\S]*?(?=^\\w|$)`, 'gm');
+        const match = content.match(keywordRegex);
+
+        if (match) {
+            const keywordContent = match[0];
+
+            // Extract [Documentation]
+            const docMatch = keywordContent.match(/\[Documentation\]\s*(.*?)(?:\n\s*\[|\n\s*\w|\n\s*$)/s);
+            const documentation = docMatch ? docMatch[1].trim().replace(/\n\s*\.\.\.\s*/g, ' ') : null;
+
+            // Extract [Arguments]
+            const argsMatch = keywordContent.match(/\[Arguments\]\s*(.*?)(?:\n|$)/);
+            let args: any[] = [];
+
+            if (argsMatch) {
+                const argsList = argsMatch[1].trim().split(/\s+/);
+                args = argsList.map(arg => {
+                    const match = arg.match(/\$\{([^}]+)\}(?:=(.*))?/);
+                    if (match) {
+                        return {
+                            name: match[1],
+                            type: 'any',
+                            defaultValue: match[2] || null
+                        };
+                    }
+                    return { name: arg, type: 'any' };
+                });
+            }
+
+            // Extract [Tags]
+            const tagsMatch = keywordContent.match(/\[Tags\]\s*(.*?)(?:\n|$)/);
+            const tags = tagsMatch ? tagsMatch[1].trim().split(/\s+/) : [];
+
+            // Extract [Return]
+            const returnMatch = keywordContent.match(/\[Return\]\s*(.*?)(?:\n|$)/);
+            const returnType = returnMatch ? returnMatch[1].trim() : null;
+
+            return {
+                documentation,
+                arguments: args,
+                returnType,
+                tags
+            };
+        }
+
+        return null;
+    }
+
+    // Store current documentation for commands
+    private currentDocumentation: any = null;
+
+    async showKeywordDocumentation(keyword: any): Promise<void> {
+        this.currentDocumentation = await this.extractKeywordDocumentation(keyword);
+        const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
+        await config.update('currentDocumentationKeyword', this.currentDocumentation, vscode.ConfigurationTarget.Global);
+        this.refresh();
+    }
+
+    getCurrentDocumentation(): any {
+        return this.currentDocumentation;
+    }
+
+    clearDocumentation(): void {
+        this.currentDocumentation = null;
+        const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
+        config.update('currentDocumentationKeyword', null, vscode.ConfigurationTarget.Global);
+        this.refresh();
     }
 }
 

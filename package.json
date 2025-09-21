@@ -40,6 +40,10 @@
         {
           "id": "rfKeywordCustomizer",
           "name": "Keyword Customizer"
+        },
+        {
+          "id": "rfDocumentation",
+          "name": "Documentation"
         }
       ]
     },
@@ -123,6 +127,21 @@
         "command": "rfCustomizer.clear",
         "title": "Clear Customizer",
         "icon": "$(clear-all)"
+      },
+      {
+        "command": "rfDocumentation.showKeywordDoc",
+        "title": "Show Documentation",
+        "icon": "$(book)"
+      },
+      {
+        "command": "rfDocumentation.copyDocumentation",
+        "title": "Copy Documentation",
+        "icon": "$(copy)"
+      },
+      {
+        "command": "rfDocumentation.clear",
+        "title": "Clear Documentation",
+        "icon": "$(clear-all)"
       }
     ],
     "menus": {
@@ -136,6 +155,11 @@
           "command": "rfKeywords.customizeKeyword",
           "when": "(view == rfProjectKeywords || view == rfOfficialKeywords) && viewItem == keyword",
           "group": "inline@2"
+        },
+        {
+          "command": "rfDocumentation.showKeywordDoc",
+          "when": "(view == rfProjectKeywords || view == rfOfficialKeywords) && viewItem == keyword",
+          "group": "inline@4"
         },
         {
           "command": "rfKeywords.copyKeyword",
@@ -208,6 +232,16 @@
           "command": "rfCustomizer.clear",
           "when": "view == rfKeywordCustomizer",
           "group": "navigation@3"
+        },
+        {
+          "command": "rfDocumentation.copyDocumentation",
+          "when": "view == rfDocumentation",
+          "group": "navigation@1"
+        },
+        {
+          "command": "rfDocumentation.clear",
+          "when": "view == rfDocumentation",
+          "group": "navigation@2"
         }
       ]
     },
@@ -323,6 +357,21 @@
                 }
               }
             }
+          }
+        },
+        "robotFrameworkKeywords.currentDocumentationKeyword": {
+          "type": "object",
+          "default": null,
+          "description": "Currently selected keyword for documentation display",
+          "properties": {
+            "name": {"type": "string"},
+            "library": {"type": "string"},
+            "documentation": {"type": "string"},
+            "arguments": {"type": "array"},
+            "source": {"type": "string"},
+            "filePath": {"type": "string"},
+            "returnType": {"type": "string"},
+            "tags": {"type": "array"}
           }
         }
       }
