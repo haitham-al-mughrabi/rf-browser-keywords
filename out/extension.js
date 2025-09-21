@@ -8,12 +8,10 @@ function activate(context) {
     const projectProvider = new RobotFrameworkKeywordProvider('project');
     const officialProvider = new RobotFrameworkKeywordProvider('official');
     const variablesProvider = new VariablesProvider();
-    const customizerProvider = new KeywordCustomizerProvider();
     const documentationProvider = new DocumentationProvider();
     vscode.window.registerTreeDataProvider('rfProjectKeywords', projectProvider);
     vscode.window.registerTreeDataProvider('rfOfficialKeywords', officialProvider);
     vscode.window.registerTreeDataProvider('rfVariables', variablesProvider);
-    vscode.window.registerTreeDataProvider('rfKeywordCustomizer', customizerProvider);
     vscode.window.registerTreeDataProvider('rfDocumentation', documentationProvider);
     // Clear old keywords and scan workspace for keywords on activation
     const clearAndScan = async () => {
@@ -48,25 +46,12 @@ function activate(context) {
             vscode.window.showInformationMessage(`Copied: ${item.label}`);
         }
     });
-    // New command that shows both documentation and loads customizer
+    // New command that shows documentation
     vscode.commands.registerCommand('rfKeywords.showKeywordDetails', async (item) => {
         if (item.implementation) {
             // Show documentation
             await documentationProvider.showKeywordDocumentation(item);
-            // Load into customizer
-            await customizerProvider.setKeyword(item);
-            vscode.window.showInformationMessage(`Loaded: ${item.label} into customizer and documentation`);
-        }
-    });
-    vscode.commands.registerCommand('rfKeywords.customizeKeyword', async (item) => {
-        if (item.implementation) {
-            // Set the keyword in the customizer view instead of showing popups
-            await customizerProvider.setCurrentKeyword({
-                name: item.label,
-                implementation: item.implementation,
-                library: item.library || 'Unknown'
-            });
-            vscode.window.showInformationMessage(`Keyword loaded in customizer: ${item.label}`);
+            vscode.window.showInformationMessage(`Loaded: ${item.label} into documentation`);
         }
     });
     vscode.commands.registerCommand('rfKeywords.refresh', async () => {
@@ -126,57 +111,6 @@ function activate(context) {
         vscode.window.showInformationMessage('Scanning workspace for variables...');
         await scanWorkspaceVariables();
         variablesProvider.refresh();
-    });
-    // Keyword Customizer commands
-    vscode.commands.registerCommand('rfCustomizer.editParameter', async (item) => {
-        if (item.parameter) {
-            const newValue = await vscode.window.showInputBox({
-                prompt: `Enter new value for parameter: ${item.parameter.name}`,
-                placeHolder: item.parameter.placeholder,
-                value: item.parameter.value || item.parameter.defaultValue || ''
-            });
-            if (newValue !== undefined) {
-                await customizerProvider.updateParameter(item.parameter.name, newValue);
-                vscode.window.showInformationMessage(`Updated parameter: ${item.parameter.name}`);
-            }
-        }
-    });
-    vscode.commands.registerCommand('rfCustomizer.resetParameter', async (item) => {
-        if (item.parameter) {
-            await customizerProvider.resetParameter(item.parameter.name);
-            vscode.window.showInformationMessage(`Reset parameter: ${item.parameter.name}`);
-        }
-    });
-    vscode.commands.registerCommand('rfCustomizer.insertKeyword', () => {
-        const customizedKeyword = customizerProvider.getCustomizedKeyword();
-        if (customizedKeyword) {
-            const editor = vscode.window.activeTextEditor;
-            if (editor) {
-                const position = editor.selection.active;
-                const keywordWithNewline = customizedKeyword + '\n';
-                editor.edit(editBuilder => {
-                    editBuilder.insert(position, keywordWithNewline);
-                });
-                vscode.window.showInformationMessage('Inserted customized keyword');
-            }
-        }
-        else {
-            vscode.window.showWarningMessage('No keyword selected for customization');
-        }
-    });
-    vscode.commands.registerCommand('rfCustomizer.copyKeyword', () => {
-        const customizedKeyword = customizerProvider.getCustomizedKeyword();
-        if (customizedKeyword) {
-            vscode.env.clipboard.writeText(customizedKeyword);
-            vscode.window.showInformationMessage('Copied customized keyword to clipboard');
-        }
-        else {
-            vscode.window.showWarningMessage('No keyword selected for customization');
-        }
-    });
-    vscode.commands.registerCommand('rfCustomizer.clear', async () => {
-        await customizerProvider.clearKeyword();
-        vscode.window.showInformationMessage('Cleared keyword customizer');
     });
     // Documentation commands
     vscode.commands.registerCommand('rfDocumentation.showKeywordDoc', async (item) => {
@@ -1373,7 +1307,7 @@ class KeywordTreeItem extends vscode.TreeItem {
         if (implementation) {
             this.tooltip = `${this.label}: Click to copy, Right-click for more options`;
             // Use the keyword documentation as description if available, otherwise fallback to library
-            super.description = this.documentation || library;
+            this.description = this.documentation || library;
             this.contextValue = 'keyword';
             this.command = {
                 command: 'rfKeywords.showKeywordDetails',
@@ -1485,41 +1419,6 @@ class VariableTreeItem extends vscode.TreeItem {
             else {
                 this.iconPath = new vscode.ThemeIcon('folder');
             }
-        }
-    }
-}
-class KeywordCustomizerTreeItem extends vscode.TreeItem {
-    constructor(label, collapsibleState, parameter, isKeywordInfo = false) {
-        super(label, collapsibleState);
-        this.label = label;
-        this.collapsibleState = collapsibleState;
-        this.parameter = parameter;
-        this.isKeywordInfo = isKeywordInfo;
-        if (parameter) {
-            const userValue = parameter.value || '';
-            const defaultToShow = parameter.originalDefault || parameter.defaultValue || 'None';
-            this.tooltip = `${parameter.name}: Current=${userValue || 'empty'}, Default=${defaultToShow}`;
-            this.description = `# default: ${defaultToShow}`;
-            this.contextValue = 'parameter';
-            // Different icons for different parameter states
-            if (parameter.value && parameter.value !== parameter.defaultValue) {
-                this.iconPath = new vscode.ThemeIcon('symbol-parameter', new vscode.ThemeColor('charts.orange'));
-            }
-            else if (parameter.defaultValue) {
-                this.iconPath = new vscode.ThemeIcon('symbol-parameter', new vscode.ThemeColor('charts.blue'));
-            }
-            else {
-                this.iconPath = new vscode.ThemeIcon('symbol-parameter', new vscode.ThemeColor('charts.gray'));
-            }
-        }
-        else if (isKeywordInfo) {
-            this.tooltip = `Keyword: ${this.label}`;
-            this.iconPath = new vscode.ThemeIcon('symbol-method');
-            this.contextValue = 'keywordInfo';
-        }
-        else {
-            this.tooltip = this.label;
-            this.iconPath = new vscode.ThemeIcon('folder');
         }
     }
 }
@@ -2238,223 +2137,6 @@ class VariablesProvider {
         return fileVariables.map(variable => new VariableTreeItem(variable.name, vscode.TreeItemCollapsibleState.None, variable));
     }
 }
-class KeywordCustomizerProvider {
-    constructor() {
-        this._onDidChangeTreeData = new vscode.EventEmitter();
-        this.onDidChangeTreeData = this._onDidChangeTreeData.event;
-    }
-    refresh() {
-        this._onDidChangeTreeData.fire();
-    }
-    getTreeItem(element) {
-        return element;
-    }
-    getChildren(element) {
-        if (!element) {
-            return Promise.resolve(this.getRootItems());
-        }
-        // If element is the keyword info, return parameters
-        if (element.isKeywordInfo) {
-            return Promise.resolve(this.getParameterItems());
-        }
-        // If element is the preview section, return preview items
-        if (element.label === 'Preview') {
-            return Promise.resolve(this.getPreviewItems());
-        }
-        return Promise.resolve([]);
-    }
-    getRootItems() {
-        const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
-        const currentKeyword = config.get('currentCustomizingKeyword');
-        if (!currentKeyword) {
-            return [new KeywordCustomizerTreeItem('No keyword selected for customization', vscode.TreeItemCollapsibleState.None)];
-        }
-        const items = [];
-        // Add keyword info section
-        items.push(new KeywordCustomizerTreeItem(`${currentKeyword.name} (${currentKeyword.library})`, vscode.TreeItemCollapsibleState.Expanded, undefined, true));
-        // Add preview section
-        items.push(new KeywordCustomizerTreeItem('Preview', vscode.TreeItemCollapsibleState.Expanded, undefined, false // This will be a preview section
-        ));
-        return items;
-    }
-    getParameterItems() {
-        const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
-        const currentKeyword = config.get('currentCustomizingKeyword');
-        if (!currentKeyword || !currentKeyword.parameters) {
-            return [new KeywordCustomizerTreeItem('No parameters to customize', vscode.TreeItemCollapsibleState.None)];
-        }
-        return currentKeyword.parameters.map((param) => {
-            const userValue = param.value || '';
-            const defaultToShow = param.originalDefault || param.defaultValue || 'None';
-            // Show Robot Framework argument syntax
-            const displayValue = userValue ? `\${${userValue}}` : '${  }';
-            const label = `${param.name}=${displayValue}`;
-            return new KeywordCustomizerTreeItem(label, vscode.TreeItemCollapsibleState.None, param);
-        });
-    }
-    getPreviewItems() {
-        const customizedKeyword = this.getCustomizedKeyword();
-        if (!customizedKeyword) {
-            return [new KeywordCustomizerTreeItem('No preview available', vscode.TreeItemCollapsibleState.None)];
-        }
-        // Split the customized keyword into lines for display
-        const lines = customizedKeyword.split('\n');
-        return lines.map((line, index) => {
-            // Clean up the line for display
-            const cleanLine = line.trim();
-            const isMainKeyword = index === 0;
-            return new KeywordCustomizerTreeItem(cleanLine || '(empty line)', vscode.TreeItemCollapsibleState.None, undefined, false);
-        });
-    }
-    async setCurrentKeyword(keyword) {
-        // Extract parameters from keyword implementation
-        const parameters = this.extractParameters(keyword.implementation);
-        const customizingKeyword = {
-            name: keyword.name,
-            implementation: keyword.implementation,
-            library: keyword.library,
-            parameters: parameters
-        };
-        const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
-        await config.update('currentCustomizingKeyword', customizingKeyword, vscode.ConfigurationTarget.Global);
-        this.refresh();
-    }
-    extractParameters(implementation) {
-        // First try to extract from [Arguments] section if it's a Robot Framework keyword
-        const argumentsMatch = implementation.match(/\[Arguments\]\s*(.*?)(?:\n|$)/i);
-        if (argumentsMatch) {
-            return this.parseRobotFrameworkArguments(argumentsMatch[1]);
-        }
-        // Fallback to placeholder extraction for other formats
-        const placeholders = implementation.match(/\$\{[^}]+\}/g) || [];
-        const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
-        const defaultValues = config.get('defaultValues', {});
-        // Remove duplicates while preserving order
-        const uniquePlaceholders = [...new Set(placeholders)];
-        return uniquePlaceholders.map(placeholder => {
-            const paramName = placeholder.replace(/\$\{|\}/g, '');
-            const defaultValue = defaultValues[paramName] || this.getBuiltInDefault(paramName);
-            return {
-                name: paramName,
-                placeholder: placeholder,
-                value: '',
-                defaultValue: defaultValue,
-                originalDefault: null // Will be populated if found in [Arguments]
-            };
-        });
-    }
-    parseRobotFrameworkArguments(argumentsLine) {
-        const parameters = [];
-        const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
-        const defaultValues = config.get('defaultValues', {});
-        // Split by whitespace and process each argument
-        const args = argumentsLine.trim().split(/\s+/);
-        for (const arg of args) {
-            if (arg.includes('${') && arg.includes('}')) {
-                // Handle ${param}=${default} or ${param} format
-                const match = arg.match(/\$\{([^}]+)\}(?:=(.*))?/);
-                if (match) {
-                    const paramName = match[1];
-                    const originalDefault = match[2] || null;
-                    const userDefault = defaultValues[paramName] || this.getBuiltInDefault(paramName);
-                    parameters.push({
-                        name: paramName,
-                        placeholder: `\${${paramName}}`,
-                        value: '',
-                        defaultValue: userDefault,
-                        originalDefault: originalDefault // The default from the keyword definition
-                    });
-                }
-            }
-        }
-        return parameters;
-    }
-    getBuiltInDefault(paramName) {
-        const builtInDefaults = {
-            'url': 'https://example.com',
-            'selector': 'css=.my-element',
-            'text': 'Sample text',
-            'browser': 'chromium',
-            'timeout': '10s',
-            'filename': 'screenshot.png',
-            'path': '/path/to/file',
-            'message': 'Test message',
-            'value': 'test_value',
-            'key': 'test_key'
-        };
-        return builtInDefaults[paramName] || '';
-    }
-    async updateParameter(parameterName, newValue) {
-        const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
-        const currentKeyword = config.get('currentCustomizingKeyword');
-        if (currentKeyword && currentKeyword.parameters) {
-            const paramIndex = currentKeyword.parameters.findIndex((p) => p.name === parameterName);
-            if (paramIndex !== -1) {
-                currentKeyword.parameters[paramIndex].value = newValue;
-                await config.update('currentCustomizingKeyword', currentKeyword, vscode.ConfigurationTarget.Global);
-                this.refresh(); // This will update both parameters and preview
-            }
-        }
-    }
-    async resetParameter(parameterName) {
-        const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
-        const currentKeyword = config.get('currentCustomizingKeyword');
-        if (currentKeyword && currentKeyword.parameters) {
-            const paramIndex = currentKeyword.parameters.findIndex((p) => p.name === parameterName);
-            if (paramIndex !== -1) {
-                currentKeyword.parameters[paramIndex].value = '';
-                await config.update('currentCustomizingKeyword', currentKeyword, vscode.ConfigurationTarget.Global);
-                this.refresh();
-            }
-        }
-    }
-    async clearKeyword() {
-        const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
-        await config.update('currentCustomizingKeyword', null, vscode.ConfigurationTarget.Global);
-        this.refresh();
-    }
-    getCustomizedKeyword() {
-        const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
-        const currentKeyword = config.get('currentCustomizingKeyword');
-        if (!currentKeyword) {
-            return null;
-        }
-        // Generate Robot Framework keyword call format
-        if (!currentKeyword.parameters || currentKeyword.parameters.length === 0) {
-            return currentKeyword.name;
-        }
-        let keywordCall = currentKeyword.name;
-        const argumentLines = [];
-        for (const param of currentKeyword.parameters) {
-            const userValue = param.value || '';
-            const defaultComment = param.originalDefault ?
-                `# default value is \${${param.originalDefault}}` :
-                `# default value is ${param.defaultValue || 'None'}`;
-            const argumentLine = `    ...    ${param.name}=\${${userValue}}    ${defaultComment}`;
-            argumentLines.push(argumentLine);
-        }
-        if (argumentLines.length > 0) {
-            keywordCall += '\n' + argumentLines.join('\n');
-        }
-        return keywordCall;
-    }
-    async setKeyword(keyword) {
-        if (!keyword.implementation) {
-            return;
-        }
-        // Extract parameters from the keyword implementation
-        const parameters = extractKeywordParameters(keyword.implementation);
-        const keywordData = {
-            name: keyword.label,
-            implementation: keyword.implementation,
-            library: keyword.library || 'Unknown',
-            parameters: parameters
-        };
-        const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
-        await config.update('currentCustomizingKeyword', keywordData, vscode.ConfigurationTarget.Global);
-        this.refresh();
-    }
-}
 class DocumentationProvider {
     constructor() {
         this._onDidChangeTreeData = new vscode.EventEmitter();
@@ -2744,7 +2426,7 @@ class DocumentationProvider {
     }
 }
 function generateRobotFrameworkKeywordCall(keywordName, implementation, library) {
-    // Extract parameters using the same logic as the customizer
+    // Extract parameters from the keyword implementation
     const parameters = extractKeywordParameters(implementation);
     if (!parameters || parameters.length === 0) {
         return keywordName;
@@ -2752,11 +2434,14 @@ function generateRobotFrameworkKeywordCall(keywordName, implementation, library)
     let keywordCall = keywordName;
     const argumentLines = [];
     for (const param of parameters) {
-        const defaultComment = param.originalDefault ?
-            `# default value is \${${param.originalDefault}}` :
-            `# default value is ${param.defaultValue || 'None'}`;
-        // Use empty placeholders for direct insert/copy
-        const argumentLine = `    ...    ${param.name}=\${  }    ${defaultComment}`;
+        // Create meaningful placeholder based on parameter name
+        const placeholder = `\${${param.name}}`;
+        // Add comment about default value if it exists
+        let comment = '';
+        if (param.originalDefault) {
+            comment = `    # default: ${param.originalDefault}`;
+        }
+        const argumentLine = `    ...    ${param.name}=${placeholder}${comment}`;
         argumentLines.push(argumentLine);
     }
     if (argumentLines.length > 0) {
@@ -2766,7 +2451,8 @@ function generateRobotFrameworkKeywordCall(keywordName, implementation, library)
 }
 function extractKeywordParameters(implementation) {
     // First try to extract from [Arguments] section if it's a Robot Framework keyword
-    const argumentsMatch = implementation.match(/\[Arguments\]\s*(.*?)(?:\n|$)/i);
+    // Handle both multi-line and single-line formats
+    const argumentsMatch = implementation.match(/\[Arguments\]\s*(.*?)(?:\[|$)/i);
     if (argumentsMatch) {
         return parseRobotFrameworkArgumentsStandalone(argumentsMatch[1]);
     }
@@ -2774,8 +2460,14 @@ function extractKeywordParameters(implementation) {
     const placeholders = implementation.match(/\$\{[^}]+\}/g) || [];
     const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
     const defaultValues = config.get('defaultValues', {});
+    // Filter out common default values that shouldn't be parameters
+    const commonDefaults = ['True', 'False', 'None', 'EMPTY', 'DEFAULT_WAIT_ELEMENT_STATE_TIMEOUT'];
+    const filteredPlaceholders = placeholders.filter(placeholder => {
+        const paramName = placeholder.replace(/\$\{|\}/g, '');
+        return !commonDefaults.includes(paramName);
+    });
     // Remove duplicates while preserving order
-    const uniquePlaceholders = [...new Set(placeholders)];
+    const uniquePlaceholders = [...new Set(filteredPlaceholders)];
     return uniquePlaceholders.map(placeholder => {
         const paramName = placeholder.replace(/\$\{|\}/g, '');
         const defaultValue = defaultValues[paramName] || getBuiltInDefaultStandalone(paramName);
@@ -2784,7 +2476,8 @@ function extractKeywordParameters(implementation) {
             placeholder: placeholder,
             value: '',
             defaultValue: defaultValue,
-            originalDefault: null
+            originalDefault: null,
+            hidden: false // Initialize as visible
         };
     });
 }
@@ -2792,24 +2485,29 @@ function parseRobotFrameworkArgumentsStandalone(argumentsLine) {
     const parameters = [];
     const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
     const defaultValues = config.get('defaultValues', {});
-    // Split by whitespace and process each argument
-    const args = argumentsLine.trim().split(/\s+/);
+    // Clean up the arguments line - remove extra whitespace and "..." separators
+    const cleanLine = argumentsLine.replace(/\.\.\./g, '').trim();
+    // Split by whitespace and filter out empty strings
+    const args = cleanLine.trim().split(/\s+/).filter(arg => arg.includes('${'));
     for (const arg of args) {
-        if (arg.includes('${') && arg.includes('}')) {
-            // Handle ${param}=${default} or ${param} format
-            const match = arg.match(/\$\{([^}]+)\}(?:=(.*))?/);
-            if (match) {
-                const paramName = match[1];
-                const originalDefault = match[2] || null;
-                const userDefault = defaultValues[paramName] || getBuiltInDefaultStandalone(paramName);
-                parameters.push({
-                    name: paramName,
-                    placeholder: `\${${paramName}}`,
-                    value: '',
-                    defaultValue: userDefault,
-                    originalDefault: originalDefault
-                });
+        // Handle ${param}=${default} or ${param} format
+        const match = arg.match(/\$\{([^}]+)\}(?:=(.*))?/);
+        if (match) {
+            const paramName = match[1];
+            let originalDefault = match[2] || null;
+            // If the default value is another variable like ${True}, extract just the value
+            if (originalDefault && originalDefault.startsWith('${') && originalDefault.endsWith('}')) {
+                originalDefault = originalDefault.replace(/\$\{|\}/g, '');
             }
+            const userDefault = defaultValues[paramName] || getBuiltInDefaultStandalone(paramName);
+            parameters.push({
+                name: paramName,
+                placeholder: `\${${paramName}}`,
+                value: '',
+                defaultValue: userDefault,
+                originalDefault: originalDefault,
+                hidden: false // Initialize as visible
+            });
         }
     }
     return parameters;

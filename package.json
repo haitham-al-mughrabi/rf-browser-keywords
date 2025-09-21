@@ -38,10 +38,6 @@
           "name": "Variables"
         },
         {
-          "id": "rfKeywordCustomizer",
-          "name": "Keyword Customizer"
-        },
-        {
           "id": "rfDocumentation",
           "name": "Documentation"
         }
@@ -57,11 +53,6 @@
         "command": "rfKeywords.copyKeyword",
         "title": "Copy Keyword",
         "icon": "$(copy)"
-      },
-      {
-        "command": "rfKeywords.customizeKeyword",
-        "title": "Customize & Insert Keyword",
-        "icon": "$(edit)"
       },
       {
         "command": "rfKeywords.refresh",
@@ -104,31 +95,6 @@
         "icon": "$(refresh)"
       },
       {
-        "command": "rfCustomizer.editParameter",
-        "title": "Edit Parameter",
-        "icon": "$(edit)"
-      },
-      {
-        "command": "rfCustomizer.resetParameter",
-        "title": "Reset Parameter",
-        "icon": "$(discard)"
-      },
-      {
-        "command": "rfCustomizer.insertKeyword",
-        "title": "Insert Customized Keyword",
-        "icon": "$(add)"
-      },
-      {
-        "command": "rfCustomizer.copyKeyword",
-        "title": "Copy Customized Keyword",
-        "icon": "$(copy)"
-      },
-      {
-        "command": "rfCustomizer.clear",
-        "title": "Clear Customizer",
-        "icon": "$(clear-all)"
-      },
-      {
         "command": "rfDocumentation.showKeywordDoc",
         "title": "Show Documentation",
         "icon": "$(book)"
@@ -150,11 +116,6 @@
           "command": "rfKeywords.insertKeyword",
           "when": "(view == rfProjectKeywords || view == rfOfficialKeywords) && viewItem == keyword",
           "group": "inline@1"
-        },
-        {
-          "command": "rfKeywords.customizeKeyword",
-          "when": "(view == rfProjectKeywords || view == rfOfficialKeywords) && viewItem == keyword",
-          "group": "inline@2"
         },
         {
           "command": "rfDocumentation.showKeywordDoc",
@@ -185,16 +146,6 @@
           "command": "rfVariables.importFile",
           "when": "view == rfVariables && viewItem == variableFile",
           "group": "inline@1"
-        },
-        {
-          "command": "rfCustomizer.editParameter",
-          "when": "view == rfKeywordCustomizer && viewItem == parameter",
-          "group": "inline@1"
-        },
-        {
-          "command": "rfCustomizer.resetParameter",
-          "when": "view == rfKeywordCustomizer && viewItem == parameter",
-          "group": "inline@2"
         }
       ],
       "view/title": [
@@ -217,21 +168,6 @@
           "command": "rfVariables.refresh",
           "when": "view == rfVariables",
           "group": "navigation@1"
-        },
-        {
-          "command": "rfCustomizer.insertKeyword",
-          "when": "view == rfKeywordCustomizer",
-          "group": "navigation@1"
-        },
-        {
-          "command": "rfCustomizer.copyKeyword",
-          "when": "view == rfKeywordCustomizer",
-          "group": "navigation@2"
-        },
-        {
-          "command": "rfCustomizer.clear",
-          "when": "view == rfKeywordCustomizer",
-          "group": "navigation@3"
         },
         {
           "command": "rfDocumentation.copyDocumentation",
@@ -337,27 +273,6 @@
           "type": "boolean",
           "default": true,
           "description": "Automatically scan workspace for variables"
-        },
-        "robotFrameworkKeywords.currentCustomizingKeyword": {
-          "type": "object",
-          "default": null,
-          "description": "Currently selected keyword for customization",
-          "properties": {
-            "name": {"type": "string"},
-            "implementation": {"type": "string"},
-            "library": {"type": "string"},
-            "parameters": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "properties": {
-                  "name": {"type": "string"},
-                  "value": {"type": "string"},
-                  "defaultValue": {"type": "string"}
-                }
-              }
-            }
-          }
         },
         "robotFrameworkKeywords.currentDocumentationKeyword": {
           "type": "object",

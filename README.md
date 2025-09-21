@@ -8,6 +8,7 @@ A VS Code extension that provides a tree view of Robot Framework Browser library
 - **One-Click Insert**: Click any keyword to insert its implementation at the cursor position
 - **Smart Templates**: Keywords include parameter placeholders using `${variable}` syntax
 
+
 ## How to Use
 
 1. Open a `.robot` file in VS Code
