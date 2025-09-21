@@ -32,6 +32,10 @@
         {
           "id": "rfOfficialKeywords",
           "name": "Official Keywords"
+        },
+        {
+          "id": "rfVariables",
+          "name": "Variables"
         }
       ]
     },
@@ -70,6 +74,26 @@
         "command": "rfKeywords.importFile",
         "title": "Import Library/Resource",
         "icon": "$(arrow-down)"
+      },
+      {
+        "command": "rfVariables.insertVariable",
+        "title": "Insert Variable",
+        "icon": "$(add)"
+      },
+      {
+        "command": "rfVariables.copyVariable",
+        "title": "Copy Variable",
+        "icon": "$(copy)"
+      },
+      {
+        "command": "rfVariables.importFile",
+        "title": "Import Variables File",
+        "icon": "$(arrow-down)"
+      },
+      {
+        "command": "rfVariables.refresh",
+        "title": "Refresh Variables",
+        "icon": "$(refresh)"
       }
     ],
     "menus": {
@@ -93,6 +117,21 @@
           "command": "rfKeywords.importFile",
           "when": "view == rfProjectKeywords && viewItem == library",
           "group": "inline@1"
+        },
+        {
+          "command": "rfVariables.insertVariable",
+          "when": "view == rfVariables && viewItem == variable",
+          "group": "inline@1"
+        },
+        {
+          "command": "rfVariables.copyVariable",
+          "when": "view == rfVariables && viewItem == variable",
+          "group": "inline@2"
+        },
+        {
+          "command": "rfVariables.importFile",
+          "when": "view == rfVariables && viewItem == variableFile",
+          "group": "inline@1"
         }
       ],
       "view/title": [
@@ -110,6 +149,11 @@
           "command": "rfKeywords.refresh",
           "when": "view == rfProjectKeywords",
           "group": "navigation@3"
+        },
+        {
+          "command": "rfVariables.refresh",
+          "when": "view == rfVariables",
+          "group": "navigation@1"
         }
       ]
     },
@@ -184,6 +228,27 @@
           ],
           "description": "Glob patterns for scanning project keywords",
           "items": {"type": "string"}
+        },
+        "robotFrameworkKeywords.discoveredVariables": {
+          "type": "array",
+          "default": [],
+          "description": "Variables discovered from the workspace",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {"type": "string"},
+              "value": {"type": "string"},
+              "type": {"type": "string"},
+              "source": {"type": "string"},
+              "filePath": {"type": "string"},
+              "folderPath": {"type": "string"}
+            }
+          }
+        },
+        "robotFrameworkKeywords.scanVariables": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically scan workspace for variables"
         }
       }
     }

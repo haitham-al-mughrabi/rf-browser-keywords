@@ -5,8 +5,10 @@ import * as path from 'path';
 export function activate(context: vscode.ExtensionContext) {
     const projectProvider = new RobotFrameworkKeywordProvider('project');
     const officialProvider = new RobotFrameworkKeywordProvider('official');
+    const variablesProvider = new VariablesProvider();
     vscode.window.registerTreeDataProvider('rfProjectKeywords', projectProvider);
     vscode.window.registerTreeDataProvider('rfOfficialKeywords', officialProvider);
+    vscode.window.registerTreeDataProvider('rfVariables', variablesProvider);
 
     // Clear old keywords and scan workspace for keywords on activation
     const clearAndScan = async () => {
@@ -15,6 +17,7 @@ export function activate(context: vscode.ExtensionContext) {
         await scanWorkspaceKeywords();
         projectProvider.refresh();
         officialProvider.refresh();
+        variablesProvider.refresh();
     };
     clearAndScan();
 
@@ -64,6 +67,7 @@ export function activate(context: vscode.ExtensionContext) {
         await scanWorkspaceKeywords();
         projectProvider.refresh();
         officialProvider.refresh();
+        variablesProvider.refresh();
     });
 
     vscode.commands.registerCommand('rfKeywords.editKeywordDefaults', async () => {
@@ -74,10 +78,43 @@ export function activate(context: vscode.ExtensionContext) {
         await addCustomKeyword();
         projectProvider.refresh();
         officialProvider.refresh();
+        variablesProvider.refresh();
     });
 
     vscode.commands.registerCommand('rfKeywords.importFile', async (item: KeywordTreeItem) => {
         await importLibraryOrResource(item);
+    });
+
+    // Variable commands
+    vscode.commands.registerCommand('rfVariables.insertVariable', (item: VariableTreeItem) => {
+        if (item.variable) {
+            const editor = vscode.window.activeTextEditor;
+            if (editor) {
+                const position = editor.selection.active;
+                const variableWithNewline = item.variable.name + '\n';
+                editor.edit(editBuilder => {
+                    editBuilder.insert(position, variableWithNewline);
+                });
+                vscode.window.showInformationMessage(`Inserted: ${item.variable.name}`);
+            }
+        }
+    });
+
+    vscode.commands.registerCommand('rfVariables.copyVariable', (item: VariableTreeItem) => {
+        if (item.variable) {
+            vscode.env.clipboard.writeText(item.variable.name);
+            vscode.window.showInformationMessage(`Copied: ${item.variable.name}`);
+        }
+    });
+
+    vscode.commands.registerCommand('rfVariables.importFile', async (item: VariableTreeItem) => {
+        await importVariableFile(item);
+    });
+
+    vscode.commands.registerCommand('rfVariables.refresh', async () => {
+        vscode.window.showInformationMessage('Scanning workspace for variables...');
+        await scanWorkspaceVariables();
+        variablesProvider.refresh();
     });
 }
 
@@ -159,6 +196,57 @@ async function importLibraryOrResource(item: KeywordTreeItem): Promise<void> {
     // Determine import type based on file extension
     const isPythonFile = targetFilePath.endsWith('.py');
     const importType = isPythonFile ? 'Library' : 'Resource';
+    const importStatement = `${importType}    ${relativeTargetPath}`;
+
+    // Insert the import statement in the Settings section
+    await insertImportStatement(editor, importStatement);
+
+    vscode.window.showInformationMessage(`Imported: ${importStatement}`);
+}
+
+async function importVariableFile(item: VariableTreeItem): Promise<void> {
+    if (!item.label) {
+        vscode.window.showErrorMessage('No file selected for import');
+        return;
+    }
+
+    const editor = vscode.window.activeTextEditor;
+    if (!editor) {
+        vscode.window.showErrorMessage('No active Robot Framework file to import into');
+        return;
+    }
+
+    // Get the file information from the tree item
+    const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
+    const discoveredVariables = config.get('discoveredVariables', []) as any[];
+
+    // Find the actual file path for this variable file
+    const baseFileName = item.label.replace(/\.(py|robot|resource)$/, '');
+    console.log('Looking for variable file:', baseFileName);
+
+    const matchingVariable = discoveredVariables.find(variable =>
+        variable.fileName === baseFileName &&
+        (variable.source === 'python' || variable.source === 'robot')
+    );
+
+    if (!matchingVariable) {
+        vscode.window.showErrorMessage(`Could not find file path for variable import: "${baseFileName}"`);
+        return;
+    }
+
+    // Get workspace folder to calculate relative path
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+    if (!workspaceFolders) {
+        vscode.window.showErrorMessage('No workspace folder found');
+        return;
+    }
+
+    const workspacePath = workspaceFolders[0].uri.fsPath;
+    const relativeTargetPath = path.relative(workspacePath, matchingVariable.filePath);
+
+    // Determine import type based on file extension
+    const isPythonFile = matchingVariable.filePath.endsWith('.py');
+    const importType = isPythonFile ? 'Variables' : 'Resource';
     const importStatement = `${importType}    ${relativeTargetPath}`;
 
     // Insert the import statement in the Settings section
@@ -461,6 +549,182 @@ async function scanWorkspaceKeywords(): Promise<void> {
         vscode.window.showInformationMessage(`Discovered ${discoveredKeywords.length} keywords from workspace`);
     } else {
         vscode.window.showInformationMessage('No keywords found in workspace');
+    }
+
+    // Also scan for variables
+    await scanWorkspaceVariables();
+}
+
+async function scanWorkspaceVariables(): Promise<void> {
+    const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
+    const shouldScan = config.get('scanVariables', true);
+
+    if (!shouldScan) return;
+
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+    if (!workspaceFolders) return;
+
+    const discoveredVariables: any[] = [];
+
+    for (const folder of workspaceFolders) {
+        const workspacePath = folder.uri.fsPath;
+
+        // Check if the workspace has Robot Framework project structure
+        let basePath = workspacePath;
+        let hasFolders = fs.existsSync(path.join(workspacePath, 'Libraries')) ||
+                        fs.existsSync(path.join(workspacePath, 'POM')) ||
+                        fs.existsSync(path.join(workspacePath, 'Utilities')) ||
+                        fs.existsSync(path.join(workspacePath, 'Resources'));
+
+        // If not, check if there's a sample-workspace subdirectory (for development)
+        if (!hasFolders) {
+            const sampleWorkspacePath = path.join(workspacePath, 'sample-workspace');
+            if (fs.existsSync(sampleWorkspacePath)) {
+                basePath = sampleWorkspacePath;
+                hasFolders = true;
+            }
+        }
+
+        if (hasFolders) {
+            const scanPaths = config.get('projectScanPaths', [
+                'Libraries/**/*.py',
+                'POM/**/*.{robot,resource}',
+                'Utilities/**/*.{py,robot,resource}',
+                'Resources/**/*.{py,robot,resource}',
+                '*.resource'
+            ]) as string[];
+
+            await scanVariablesWithGlobPatterns(basePath, scanPaths, discoveredVariables);
+        }
+    }
+
+    // Store discovered variables
+    await config.update('discoveredVariables', discoveredVariables, vscode.ConfigurationTarget.Global);
+    console.log(`Discovered ${discoveredVariables.length} variables from workspace`);
+}
+
+async function scanVariablesWithGlobPatterns(basePath: string, patterns: string[], variables: any[]): Promise<void> {
+    for (const pattern of patterns) {
+        try {
+            if (pattern.includes('Libraries/**/*.py')) {
+                await scanPythonVariables(path.join(basePath, 'Libraries'), variables, basePath);
+            } else if (pattern.includes('POM/**/*')) {
+                await scanRobotVariables(path.join(basePath, 'POM'), variables, basePath);
+            } else if (pattern.includes('Utilities/**/*')) {
+                await scanUtilitiesVariables(path.join(basePath, 'Utilities'), variables, basePath);
+            } else if (pattern.includes('Resources/**/*')) {
+                await scanResourcesVariables(path.join(basePath, 'Resources'), variables, basePath);
+            } else if (pattern === '*.resource') {
+                await scanRootVariableFiles(basePath, variables, basePath);
+            }
+        } catch (error) {
+            console.error(`Error scanning variables for pattern ${pattern}:`, error);
+        }
+    }
+}
+
+async function scanPythonVariables(librariesPath: string, variables: any[], basePath?: string): Promise<void> {
+    if (!fs.existsSync(librariesPath)) {
+        return;
+    }
+
+    try {
+        const files = await getAllPythonFiles(librariesPath);
+
+        for (const filePath of files) {
+            const content = fs.readFileSync(filePath, 'utf-8');
+            const extractedVariables = extractPythonVariables(content, filePath, basePath);
+            variables.push(...extractedVariables);
+        }
+    } catch (error) {
+        console.error('Error scanning Python variables:', error);
+    }
+}
+
+async function scanRobotVariables(variablesPath: string, variables: any[], basePath?: string): Promise<void> {
+    if (!fs.existsSync(variablesPath)) {
+        return;
+    }
+
+    try {
+        const files = await getAllRobotFiles(variablesPath);
+
+        for (const filePath of files) {
+            const content = fs.readFileSync(filePath, 'utf-8');
+            const extractedVariables = extractRobotVariables(content, filePath, basePath);
+            variables.push(...extractedVariables);
+        }
+    } catch (error) {
+        console.error('Error scanning Robot variables:', error);
+    }
+}
+
+async function scanUtilitiesVariables(utilitiesPath: string, variables: any[], basePath?: string): Promise<void> {
+    if (!fs.existsSync(utilitiesPath)) return;
+
+    try {
+        // Scan Python files in Utilities
+        const pythonFiles = await getAllPythonFiles(utilitiesPath);
+        for (const filePath of pythonFiles) {
+            const content = fs.readFileSync(filePath, 'utf-8');
+            const extractedVariables = extractPythonVariables(content, filePath, basePath);
+            variables.push(...extractedVariables);
+        }
+
+        // Scan Robot files in Utilities
+        const robotFiles = await getAllRobotFiles(utilitiesPath);
+        for (const filePath of robotFiles) {
+            const content = fs.readFileSync(filePath, 'utf-8');
+            const extractedVariables = extractRobotVariables(content, filePath, basePath);
+            variables.push(...extractedVariables);
+        }
+    } catch (error) {
+        console.error('Error scanning Utilities variables:', error);
+    }
+}
+
+async function scanResourcesVariables(resourcesPath: string, variables: any[], basePath?: string): Promise<void> {
+    if (!fs.existsSync(resourcesPath)) return;
+
+    try {
+        // Scan Python files in Resources
+        const pythonFiles = await getAllPythonFiles(resourcesPath);
+        for (const filePath of pythonFiles) {
+            const content = fs.readFileSync(filePath, 'utf-8');
+            const extractedVariables = extractPythonVariables(content, filePath, basePath);
+            variables.push(...extractedVariables);
+        }
+
+        // Scan Robot/Resource files in Resources
+        const robotFiles = await getAllRobotFiles(resourcesPath);
+        for (const filePath of robotFiles) {
+            const content = fs.readFileSync(filePath, 'utf-8');
+            const extractedVariables = extractRobotVariables(content, filePath, basePath);
+            variables.push(...extractedVariables);
+        }
+    } catch (error) {
+        console.error('Error scanning Resources variables:', error);
+    }
+}
+
+async function scanRootVariableFiles(rootPath: string, variables: any[], basePath?: string): Promise<void> {
+    if (!fs.existsSync(rootPath)) return;
+
+    try {
+        const items = fs.readdirSync(rootPath);
+
+        for (const item of items) {
+            const itemPath = path.join(rootPath, item);
+            const stat = fs.statSync(itemPath);
+
+            if (!stat.isDirectory() && item.endsWith('.resource')) {
+                const content = fs.readFileSync(itemPath, 'utf-8');
+                const extractedVariables = extractRobotVariables(content, itemPath, basePath);
+                variables.push(...extractedVariables);
+            }
+        }
+    } catch (error) {
+        console.error('Error scanning root variable files:', error);
     }
 }
 
@@ -901,6 +1165,168 @@ function parseArgumentLine(argLine: string): string[] {
     return parts;
 }
 
+function extractPythonVariables(content: string, filePath: string, basePath?: string): any[] {
+    const variables: any[] = [];
+    const fileName = path.basename(filePath, '.py');
+
+    // Get relative path from workspace for organization
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+    let relativePath = filePath;
+    let folderPath = 'Root';
+
+    if (workspaceFolders && workspaceFolders.length > 0) {
+        const referencePath = basePath || workspaceFolders[0].uri.fsPath;
+        relativePath = path.relative(referencePath, filePath);
+        folderPath = path.dirname(relativePath);
+
+        folderPath = folderPath.replace(/\\/g, '/');
+        if (folderPath === '.') {
+            folderPath = 'Root';
+        }
+    }
+
+    // Extract Python variables - look for module-level assignments
+    const lines = content.split('\n');
+    let inClass = false;
+    let inFunction = false;
+    let indentLevel = 0;
+
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const trimmedLine = line.trim();
+
+        if (trimmedLine === '' || trimmedLine.startsWith('#')) {
+            continue;
+        }
+
+        // Track if we're inside a class or function
+        const currentIndent = line.length - line.trimStart().length;
+
+        if (trimmedLine.startsWith('class ')) {
+            inClass = true;
+            indentLevel = currentIndent;
+            continue;
+        }
+
+        if (trimmedLine.startsWith('def ')) {
+            inFunction = true;
+            indentLevel = currentIndent;
+            continue;
+        }
+
+        // Reset flags when we go back to module level
+        if (currentIndent <= indentLevel && (inClass || inFunction)) {
+            inClass = false;
+            inFunction = false;
+        }
+
+        // Only extract module-level variables (not inside class or function)
+        if (!inClass && !inFunction) {
+            // Look for variable assignments: VARIABLE = value
+            const variableMatch = trimmedLine.match(/^([A-Z_][A-Z0-9_]*)\s*=\s*(.+)$/);
+            if (variableMatch) {
+                const varName = variableMatch[1];
+                let varValue = variableMatch[2].trim();
+
+                // Remove quotes if it's a string
+                if ((varValue.startsWith('"') && varValue.endsWith('"')) ||
+                    (varValue.startsWith("'") && varValue.endsWith("'"))) {
+                    varValue = varValue.slice(1, -1);
+                }
+
+                variables.push({
+                    name: varName,
+                    value: varValue,
+                    type: 'string',
+                    source: 'python',
+                    filePath: filePath,
+                    folderPath: folderPath,
+                    fileName: fileName
+                });
+            }
+        }
+    }
+
+    return variables;
+}
+
+function extractRobotVariables(content: string, filePath: string, basePath?: string): any[] {
+    const variables: any[] = [];
+    const fileExtension = path.extname(filePath);
+    const fileName = path.basename(filePath, fileExtension);
+
+    // Get relative path from workspace for organization
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+    let relativePath = filePath;
+    let folderPath = 'Root';
+
+    if (workspaceFolders && workspaceFolders.length > 0) {
+        const referencePath = basePath || workspaceFolders[0].uri.fsPath;
+        relativePath = path.relative(referencePath, filePath);
+        folderPath = path.dirname(relativePath);
+
+        folderPath = folderPath.replace(/\\/g, '/');
+        if (folderPath === '.') {
+            folderPath = 'Root';
+        }
+    }
+
+    // Look for Robot Framework variable definitions
+    const lines = content.split('\n');
+    let inVariableSection = false;
+
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+
+        // Check for Variables section
+        if (line.match(/^\*+\s*(Variables?)\s*\**/i)) {
+            inVariableSection = true;
+            continue;
+        }
+
+        // Check for other sections
+        if (line.match(/^\*+\s*(Test Cases?|Keywords?|Settings?|Tasks?)\s*\**/i)) {
+            inVariableSection = false;
+            continue;
+        }
+
+        if (!inVariableSection || line === '' || line.startsWith('#')) {
+            continue;
+        }
+
+        // Parse variable definitions
+        // ${VARIABLE}    value
+        // @{LIST}        item1    item2    item3
+        // &{DICT}        key1=value1    key2=value2
+        const variableMatch = line.match(/^([\$@&]\{([^}]+)\})\s+(.+)$/);
+        if (variableMatch) {
+            const fullVarName = variableMatch[1];
+            const varName = variableMatch[2];
+            const varValue = variableMatch[3].trim();
+
+            let varType = 'string';
+            if (fullVarName.startsWith('@{')) {
+                varType = 'list';
+            } else if (fullVarName.startsWith('&{')) {
+                varType = 'dict';
+            }
+
+            variables.push({
+                name: fullVarName,
+                value: varValue,
+                type: varType,
+                source: 'robot',
+                filePath: filePath,
+                folderPath: folderPath,
+                fileName: fileName,
+                fileType: fileExtension === '.resource' ? 'resource' : 'robot'
+            });
+        }
+    }
+
+    return variables;
+}
+
 function parseParameters(paramString: string): string[] {
     if (!paramString.trim()) return [];
 
@@ -1016,6 +1442,51 @@ class KeywordTreeItem extends vscode.TreeItem {
 
         // Default
         return new vscode.ThemeIcon('symbol-method');
+    }
+}
+
+class VariableTreeItem extends vscode.TreeItem {
+    constructor(
+        public readonly label: string,
+        public readonly collapsibleState: vscode.TreeItemCollapsibleState,
+        public readonly variable?: any,
+        public readonly folderPath?: string
+    ) {
+        super(label, collapsibleState);
+
+        if (variable) {
+            this.tooltip = `${this.label}: ${variable.value}`;
+            this.description = variable.value;
+            this.contextValue = 'variable';
+            this.command = {
+                command: 'rfVariables.copyVariable',
+                title: 'Copy Variable',
+                arguments: [this]
+            };
+
+            // Add icons based on variable type
+            if (variable.type === 'list') {
+                this.iconPath = new vscode.ThemeIcon('list-unordered');
+            } else if (variable.type === 'dict') {
+                this.iconPath = new vscode.ThemeIcon('symbol-object');
+            } else {
+                this.iconPath = new vscode.ThemeIcon('symbol-variable');
+            }
+        } else {
+            this.tooltip = `${this.label} variables`;
+            this.contextValue = 'variableFile';
+
+            // Set appropriate icons for different file types
+            if (this.label.endsWith('.py')) {
+                this.iconPath = new vscode.ThemeIcon('file-code');
+            } else if (this.label.endsWith('.robot')) {
+                this.iconPath = new vscode.ThemeIcon('robot');
+            } else if (this.label.endsWith('.resource')) {
+                this.iconPath = new vscode.ThemeIcon('symbol-module');
+            } else {
+                this.iconPath = new vscode.ThemeIcon('folder');
+            }
+        }
     }
 }
 
@@ -1642,5 +2113,187 @@ class RobotFrameworkKeywordProvider implements vscode.TreeDataProvider<KeywordTr
             new KeywordTreeItem('Element Text Should Be', vscode.TreeItemCollapsibleState.None, 'Element Text Should Be    ${source}    ${expected}    ${xpath}', 'XML'),
             new KeywordTreeItem('Save XML', vscode.TreeItemCollapsibleState.None, 'Save XML    ${source}    ${path}', 'XML')
         ];
+    }
+}
+
+class VariablesProvider implements vscode.TreeDataProvider<VariableTreeItem> {
+    private _onDidChangeTreeData: vscode.EventEmitter<VariableTreeItem | undefined | null | void> = new vscode.EventEmitter<VariableTreeItem | undefined | null | void>();
+    readonly onDidChangeTreeData: vscode.Event<VariableTreeItem | undefined | null | void> = this._onDidChangeTreeData.event;
+
+    refresh(): void {
+        this._onDidChangeTreeData.fire();
+    }
+
+    getTreeItem(element: VariableTreeItem): vscode.TreeItem {
+        return element;
+    }
+
+    getChildren(element?: VariableTreeItem): Thenable<VariableTreeItem[]> {
+        if (!element) {
+            return Promise.resolve(this.getVariableCategories());
+        }
+
+        // Check if this is a folder
+        if ((element as any).folderPath !== undefined) {
+            return Promise.resolve(this.getFilesInFolder((element as any).folderPath));
+        } else {
+            // This is a file, return variables in this file
+            return Promise.resolve(this.getVariablesForFile(element.label));
+        }
+    }
+
+    private getVariableCategories(): VariableTreeItem[] {
+        const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
+        const discoveredVariables = config.get('discoveredVariables', []) as any[];
+
+        if (discoveredVariables.length === 0) {
+            return [new VariableTreeItem(
+                'No variables found',
+                vscode.TreeItemCollapsibleState.None
+            )];
+        }
+
+        return this.getFileBasedCategories(discoveredVariables);
+    }
+
+    private getFileBasedCategories(variables: any[]): VariableTreeItem[] {
+        const folderStructure = new Map<string, Map<string, any[]>>();
+
+        // Group variables by folder path and then by file
+        variables.forEach(variable => {
+            let folderPath = variable.folderPath || 'Root';
+
+            // Normalize folder path
+            if (folderPath === '.' || folderPath === '') {
+                folderPath = 'Root';
+            }
+
+            const fileName = variable.fileName;
+
+            if (!folderStructure.has(folderPath)) {
+                folderStructure.set(folderPath, new Map());
+            }
+
+            const folderFiles = folderStructure.get(folderPath)!;
+            if (!folderFiles.has(fileName)) {
+                folderFiles.set(fileName, []);
+            }
+            folderFiles.get(fileName)!.push(variable);
+        });
+
+        // Create tree structure
+        const categories: VariableTreeItem[] = [];
+
+        // Sort folders alphabetically
+        const sortedFolders = Array.from(folderStructure.keys()).sort();
+
+        sortedFolders.forEach(folderPath => {
+            const files = folderStructure.get(folderPath)!;
+
+            // Create folder category
+            const folderDisplayName = this.formatFolderName(folderPath);
+            const folderItem = new VariableTreeItem(
+                folderDisplayName,
+                vscode.TreeItemCollapsibleState.Collapsed
+            );
+
+            // Store original folder path for later retrieval
+            (folderItem as any).folderPath = folderPath;
+            categories.push(folderItem);
+        });
+
+        return categories;
+    }
+
+    private formatFolderName(folderPath: string): string {
+        if (folderPath === '.' || folderPath === '' || folderPath === 'Root') {
+            return 'Root';
+        }
+
+        // Convert to arrow notation for display
+        return folderPath.replace(/[\/\\]/g, ' → ');
+    }
+
+    private getFilesInFolder(folderPath: string): VariableTreeItem[] {
+        const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
+        const discoveredVariables = config.get('discoveredVariables', []) as any[];
+
+        // Get all files in this specific folder
+        const filesInFolder = new Map<string, any[]>();
+
+        discoveredVariables.forEach(variable => {
+            let variableFolderPath = variable.folderPath || 'Root';
+
+            // Normalize variable folder path
+            if (variableFolderPath === '.' || variableFolderPath === '') {
+                variableFolderPath = 'Root';
+            }
+
+            if (variableFolderPath === folderPath ||
+                (folderPath === 'Root' && (variableFolderPath === '.' || variableFolderPath === '' || variableFolderPath === 'Root'))) {
+                const fileName = variable.fileName;
+                if (!filesInFolder.has(fileName)) {
+                    filesInFolder.set(fileName, []);
+                }
+                filesInFolder.get(fileName)!.push(variable);
+            }
+        });
+
+        // Create file items
+        const fileItems: VariableTreeItem[] = [];
+        filesInFolder.forEach((variables, fileName) => {
+            let displayName = fileName;
+            let fileType = 'Variables';
+
+            // Add appropriate file extension if not present
+            if (!fileName.includes('.')) {
+                if (variables[0].source === 'python') {
+                    displayName = `${fileName}.py`;
+                    fileType = 'Python Variables';
+                } else if (variables[0].fileType === 'resource') {
+                    displayName = `${fileName}.resource`;
+                    fileType = 'Resource Variables';
+                } else {
+                    displayName = `${fileName}.robot`;
+                    fileType = 'Robot Variables';
+                }
+            } else {
+                // File already has extension
+                if (fileName.endsWith('.py')) {
+                    fileType = 'Python Variables';
+                } else if (fileName.endsWith('.resource')) {
+                    fileType = 'Resource Variables';
+                } else {
+                    fileType = 'Robot Variables';
+                }
+            }
+
+            fileItems.push(new VariableTreeItem(
+                displayName,
+                vscode.TreeItemCollapsibleState.Collapsed
+            ));
+        });
+
+        return fileItems.sort((a, b) => a.label.localeCompare(b.label));
+    }
+
+    private getVariablesForFile(fileName: string): VariableTreeItem[] {
+        const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
+        const discoveredVariables = config.get('discoveredVariables', []) as any[];
+
+        // Remove file extension from the label for comparison
+        const baseFileName = fileName.replace(/\.(py|robot|resource)$/, '');
+
+        const fileVariables = discoveredVariables.filter(variable =>
+            variable.fileName === baseFileName
+        );
+
+        return fileVariables.map(variable =>
+            new VariableTreeItem(
+                variable.name,
+                vscode.TreeItemCollapsibleState.None,
+                variable
+            )
+        );
     }
 }
