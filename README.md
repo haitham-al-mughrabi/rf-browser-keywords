@@ -1,5 +1,9 @@
 # Robot Framework Keywords Explorer
 
+<p align="center">
+  <img src="images/icon.png" alt="Robot Framework Keywords Explorer" width="128" height="128">
+</p>
+
 [![Visual Studio Marketplace Version](https://img.shields.io/visual-studio-marketplace/v/Haitham-Al-Mughrabi.robot-framework-keywords)](https://marketplace.visualstudio.com/items?itemName=Haitham-Al-Mughrabi.robot-framework-keywords)
 [![Visual Studio Marketplace Downloads](https://img.shields.io/visual-studio-marketplace/d/Haitham-Al-Mughrabi.robot-framework-keywords)](https://marketplace.visualstudio.com/items?itemName=Haitham-Al-Mughrabi.robot-framework-keywords)
 [![Visual Studio Marketplace Rating](https://img.shields.io/visual-studio-marketplace/r/Haitham-Al-Mughrabi.robot-framework-keywords)](https://marketplace.visualstudio.com/items?itemName=Haitham-Al-Mughrabi.robot-framework-keywords)
