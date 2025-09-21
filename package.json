@@ -1,14 +1,43 @@
 {
-  "name": "rf-browser-keywords",
-  "displayName": "Robot Framework Keywords",
-  "description": "VS Code extension to show and insert Robot Framework standard library keywords",
-  "version": "0.0.1",
+  "name": "robot-framework-keywords",
+  "displayName": "Robot Framework Keywords Explorer",
+  "description": "Comprehensive Robot Framework extension with keyword explorer, auto-completion, documentation viewer, and project scanning capabilities",
+  "version": "1.0.0",
+  "publisher": "Haitham-Al-Mughrabi",
+  "author": {
+    "name": "Haitham Al-Mughrabi",
+    "email": "haitham.almughrabi@example.com"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/haitham-al-mughrabi/rf-browser-keywords",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/haitham-al-mughrabi/rf-browser-keywords.git"
+  },
+  "bugs": {
+    "url": "https://github.com/haitham-al-mughrabi/rf-browser-keywords/issues"
+  },
+  "keywords": [
+    "robot framework",
+    "robotframework",
+    "test automation",
+    "keywords",
+    "selenium",
+    "browser testing",
+    "automation",
+    "testing"
+  ],
   "engines": {
     "vscode": "^1.74.0"
   },
   "categories": [
+    "Testing",
     "Other"
   ],
+  "galleryBanner": {
+    "color": "#1e1e1e",
+    "theme": "dark"
+  },
   "activationEvents": [
     "*"
   ],
@@ -201,10 +230,18 @@
           "items": {
             "type": "object",
             "properties": {
-              "name": {"type": "string"},
-              "implementation": {"type": "string"},
-              "library": {"type": "string"},
-              "description": {"type": "string"}
+              "name": {
+                "type": "string"
+              },
+              "implementation": {
+                "type": "string"
+              },
+              "library": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              }
             }
           }
         },
@@ -233,13 +270,17 @@
           "type": "array",
           "default": [],
           "description": "Paths to Python files containing Robot Framework keywords",
-          "items": {"type": "string"}
+          "items": {
+            "type": "string"
+          }
         },
         "robotFrameworkKeywords.robotKeywordPaths": {
           "type": "array",
           "default": [],
           "description": "Paths to Robot Framework files containing custom keywords",
-          "items": {"type": "string"}
+          "items": {
+            "type": "string"
+          }
         },
         "robotFrameworkKeywords.projectScanPaths": {
           "type": "array",
@@ -251,7 +292,9 @@
             "*.resource"
           ],
           "description": "Glob patterns for scanning project keywords",
-          "items": {"type": "string"}
+          "items": {
+            "type": "string"
+          }
         },
         "robotFrameworkKeywords.discoveredVariables": {
           "type": "array",
@@ -260,12 +303,24 @@
           "items": {
             "type": "object",
             "properties": {
-              "name": {"type": "string"},
-              "value": {"type": "string"},
-              "type": {"type": "string"},
-              "source": {"type": "string"},
-              "filePath": {"type": "string"},
-              "folderPath": {"type": "string"}
+              "name": {
+                "type": "string"
+              },
+              "value": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string"
+              },
+              "filePath": {
+                "type": "string"
+              },
+              "folderPath": {
+                "type": "string"
+              }
             }
           }
         },
@@ -279,14 +334,30 @@
           "default": null,
           "description": "Currently selected keyword for documentation display",
           "properties": {
-            "name": {"type": "string"},
-            "library": {"type": "string"},
-            "documentation": {"type": "string"},
-            "arguments": {"type": "array"},
-            "source": {"type": "string"},
-            "filePath": {"type": "string"},
-            "returnType": {"type": "string"},
-            "tags": {"type": "array"}
+            "name": {
+              "type": "string"
+            },
+            "library": {
+              "type": "string"
+            },
+            "documentation": {
+              "type": "string"
+            },
+            "arguments": {
+              "type": "array"
+            },
+            "source": {
+              "type": "string"
+            },
+            "filePath": {
+              "type": "string"
+            },
+            "returnType": {
+              "type": "string"
+            },
+            "tags": {
+              "type": "array"
+            }
           }
         },
         "robotFrameworkKeywords.wrapVariables": {
@@ -300,11 +371,18 @@
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./"
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package",
+    "publish": "vsce publish",
+    "lint": "eslint src --ext ts",
+    "pretest": "npm run compile && npm run lint"
   },
   "devDependencies": {
     "@types/vscode": "^1.74.0",
     "@types/node": "16.x",
-    "typescript": "^4.9.4"
+    "typescript": "^4.9.4",
+    "@typescript-eslint/eslint-plugin": "^5.45.0",
+    "@typescript-eslint/parser": "^5.45.0",
+    "eslint": "^8.28.0"
   }
 }
