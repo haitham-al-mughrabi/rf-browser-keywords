@@ -42,13 +42,14 @@ A comprehensive VS Code extension that supercharges your Robot Framework develop
 ## 📸 Screenshots
 
 ### Project Keywords Explorer
-![Project Keywords](images/project-keywords.png)
+![Project Keywords](images/ProjectKeywords.png)
+![Officail Keywords](images/OfficalKeywords.png)
 
 ### Documentation Viewer
-![Documentation](images/documentation.png)
+![Documentation](images/KeywordDocumentation.png)
 
 ### Variables Management
-![Variables](images/variables.png)
+![Variables](images/VariablesManagememnt.png)
 
 ## 🛠 Installation
 

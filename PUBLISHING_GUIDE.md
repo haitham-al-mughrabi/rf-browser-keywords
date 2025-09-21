@@ -67,7 +67,7 @@ Edit `package.json`:
   "publisher": "Haitham-Al-Mughrabi",
   "author": {
     "name": "Haitham Al-Mughrabi",
-    "email": "haitham.almughrabi@example.com"
+    "email": "haitham.m.almughrabi@gmail.com"
   },
   "homepage": "https://github.com/haitham-al-mughrabi/rf-browser-keywords",
   "repository": {
