@@ -114,20 +114,32 @@ export function activate(context: vscode.ExtensionContext) {
         if (item.variable) {
             const editor = vscode.window.activeTextEditor;
             if (editor) {
+                const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
+                const wrapVariables = config.get('wrapVariables', true);
+                const variableName = wrapVariables ? `${item.variable.name}` : item.variable.name;
+
                 const position = editor.selection.active;
-                const variableWithNewline = item.variable.name + '\n';
+                const variableToInsert = variableName.includes('${') ? variableName : (wrapVariables ? `\${${variableName}}` : variableName);
+                const variableWithNewline = variableToInsert + '\n';
+
                 editor.edit(editBuilder => {
                     editBuilder.insert(position, variableWithNewline);
                 });
-                vscode.window.showInformationMessage(`Inserted: ${item.variable.name}`);
+                vscode.window.showInformationMessage(`Inserted: ${variableToInsert}`);
             }
         }
     });
 
     vscode.commands.registerCommand('rfVariables.copyVariable', (item: VariableTreeItem) => {
         if (item.variable) {
-            vscode.env.clipboard.writeText(item.variable.name);
-            vscode.window.showInformationMessage(`Copied: ${item.variable.name}`);
+            const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
+            const wrapVariables = config.get('wrapVariables', true);
+            const variableName = wrapVariables ? `${item.variable.name}` : item.variable.name;
+
+            const variableToCopy = variableName.includes('${') ? variableName : (wrapVariables ? `\${${variableName}}` : variableName);
+
+            vscode.env.clipboard.writeText(variableToCopy);
+            vscode.window.showInformationMessage(`Copied: ${variableToCopy}`);
         }
     });
 

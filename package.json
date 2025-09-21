@@ -373,6 +373,11 @@
             "returnType": {"type": "string"},
             "tags": {"type": "array"}
           }
+        },
+        "robotFrameworkKeywords.wrapVariables": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable/disable wrapping of variables with ${} when inserting or copying"
         }
       }
     }
