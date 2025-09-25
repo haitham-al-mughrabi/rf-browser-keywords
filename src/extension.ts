@@ -162,6 +162,25 @@ export function activate(context: vscode.ExtensionContext) {
         documentationProvider.clearDocumentation();
         vscode.window.showInformationMessage('Cleared documentation view');
     });
+
+    vscode.commands.registerCommand('rfKeywords.searchKeywords', async () => {
+        await searchKeywords(projectProvider, officialProvider);
+    });
+
+    vscode.commands.registerCommand('rfVariables.searchVariables', async () => {
+        await searchVariables(variablesProvider);
+    });
+
+    vscode.commands.registerCommand('rfKeywords.clearSearch', () => {
+        projectProvider.clearSearch();
+        officialProvider.clearSearch();
+        vscode.window.showInformationMessage('Search cleared. Showing all keywords.');
+    });
+
+    vscode.commands.registerCommand('rfVariables.clearSearch', () => {
+        variablesProvider.clearSearch();
+        vscode.window.showInformationMessage('Search cleared. Showing all variables.');
+    });
 }
 
 async function importLibraryOrResource(item: KeywordTreeItem): Promise<void> {
@@ -1735,13 +1754,111 @@ class DocumentationTreeItem extends vscode.TreeItem {
     }
 }
 
+async function searchKeywords(projectProvider: RobotFrameworkKeywordProvider, officialProvider: RobotFrameworkKeywordProvider): Promise<void> {
+    const searchTerm = await vscode.window.showInputBox({
+        prompt: 'Search for keywords',
+        placeHolder: 'Enter keyword name or part of it...'
+    });
+
+    if (!searchTerm) return;
+
+    // Apply search filter to both providers
+    projectProvider.setSearchTerm(searchTerm);
+    officialProvider.setSearchTerm(searchTerm);
+
+    vscode.window.showInformationMessage(`Showing keywords matching "${searchTerm}". Click on any result to insert it.`);
+}
+
+async function searchVariables(variablesProvider: VariablesProvider): Promise<void> {
+    const searchTerm = await vscode.window.showInputBox({
+        prompt: 'Search for variables',
+        placeHolder: 'Enter variable name or part of it...'
+    });
+
+    if (!searchTerm) return;
+
+    // Apply search filter to variables provider
+    variablesProvider.setSearchTerm(searchTerm);
+
+    vscode.window.showInformationMessage(`Showing variables matching "${searchTerm}". Click on any result to insert it.`);
+}
+
+function getAllOfficialKeywords(): Array<{name: string, library: string, implementation: string}> {
+    const keywords: Array<{name: string, library: string, implementation: string}> = [];
+
+    // Browser Library keywords
+    const browserKeywords = [
+        { name: 'New Browser', library: 'Browser Library', implementation: 'New Browser    ${browser}' },
+        { name: 'New Context', library: 'Browser Library', implementation: 'New Context' },
+        { name: 'New Page', library: 'Browser Library', implementation: 'New Page    ${url}' },
+        { name: 'Go To', library: 'Browser Library', implementation: 'Go To    ${url}' },
+        { name: 'Click', library: 'Browser Library', implementation: 'Click    ${selector}' },
+        { name: 'Fill Text', library: 'Browser Library', implementation: 'Fill Text    ${selector}    ${text}' },
+        { name: 'Get Text', library: 'Browser Library', implementation: 'Get Text    ${selector}' },
+        { name: 'Wait For Elements State', library: 'Browser Library', implementation: 'Wait For Elements State    ${selector}    visible' },
+        { name: 'Take Screenshot', library: 'Browser Library', implementation: 'Take Screenshot    ${filename}' },
+        { name: 'Close Browser', library: 'Browser Library', implementation: 'Close Browser' },
+        { name: 'Get Element Count', library: 'Browser Library', implementation: 'Get Element Count    ${selector}' },
+        { name: 'Hover', library: 'Browser Library', implementation: 'Hover    ${selector}' },
+        { name: 'Type Text', library: 'Browser Library', implementation: 'Type Text    ${selector}    ${text}' },
+        { name: 'Press Keys', library: 'Browser Library', implementation: 'Press Keys    ${selector}    ${key}' },
+        { name: 'Wait For Load State', library: 'Browser Library', implementation: 'Wait For Load State    ${state}' }
+    ];
+
+    // BuiltIn Library keywords
+    const builtinKeywords = [
+        { name: 'Log', library: 'BuiltIn Library', implementation: 'Log    ${message}' },
+        { name: 'Set Variable', library: 'BuiltIn Library', implementation: 'Set Variable    ${value}' },
+        { name: 'Should Be Equal', library: 'BuiltIn Library', implementation: 'Should Be Equal    ${first}    ${second}' },
+        { name: 'Should Contain', library: 'BuiltIn Library', implementation: 'Should Contain    ${container}    ${item}' },
+        { name: 'Sleep', library: 'BuiltIn Library', implementation: 'Sleep    ${time}' },
+        { name: 'Fail', library: 'BuiltIn Library', implementation: 'Fail    ${message}' },
+        { name: 'Pass Execution', library: 'BuiltIn Library', implementation: 'Pass Execution    ${message}' },
+        { name: 'Run Keyword If', library: 'BuiltIn Library', implementation: 'Run Keyword If    ${condition}    ${keyword}' },
+        { name: 'Should Be True', library: 'BuiltIn Library', implementation: 'Should Be True    ${condition}' },
+        { name: 'Should Not Be Equal', library: 'BuiltIn Library', implementation: 'Should Not Be Equal    ${first}    ${second}' },
+        { name: 'Length Should Be', library: 'BuiltIn Library', implementation: 'Length Should Be    ${item}    ${length}' },
+        { name: 'Create List', library: 'BuiltIn Library', implementation: 'Create List    ${item1}    ${item2}' }
+    ];
+
+    // Collections Library keywords
+    const collectionsKeywords = [
+        { name: 'Append To List', library: 'Collections Library', implementation: 'Append To List    ${list}    ${value}' },
+        { name: 'Get From List', library: 'Collections Library', implementation: 'Get From List    ${list}    ${index}' },
+        { name: 'List Should Contain Value', library: 'Collections Library', implementation: 'List Should Contain Value    ${list}    ${value}' },
+        { name: 'Sort List', library: 'Collections Library', implementation: 'Sort List    ${list}' }
+    ];
+
+    // String Library keywords
+    const stringKeywords = [
+        { name: 'Get Length', library: 'String Library', implementation: 'Get Length    ${string}' },
+        { name: 'Should Start With', library: 'String Library', implementation: 'Should Start With    ${string}    ${start}' },
+        { name: 'Should End With', library: 'String Library', implementation: 'Should End With    ${string}    ${end}' },
+        { name: 'Replace String', library: 'String Library', implementation: 'Replace String    ${string}    ${search}    ${replace}' }
+    ];
+
+    keywords.push(...browserKeywords, ...builtinKeywords, ...collectionsKeywords, ...stringKeywords);
+    return keywords;
+}
+
 class RobotFrameworkKeywordProvider implements vscode.TreeDataProvider<KeywordTreeItem> {
     private _onDidChangeTreeData: vscode.EventEmitter<KeywordTreeItem | undefined | null | void> = new vscode.EventEmitter<KeywordTreeItem | undefined | null | void>();
     readonly onDidChangeTreeData: vscode.Event<KeywordTreeItem | undefined | null | void> = this._onDidChangeTreeData.event;
+    private searchTerm: string = '';
 
     constructor(private viewType: 'project' | 'official') { }
 
     refresh(): void {
+        this._onDidChangeTreeData.fire();
+    }
+
+    setSearchTerm(term: string): void {
+        this.searchTerm = term.toLowerCase();
+        this._onDidChangeTreeData.fire();
+    }
+
+    clearSearch(): void {
+        this.searchTerm = '';
         this._onDidChangeTreeData.fire();
     }
 
@@ -1751,10 +1868,16 @@ class RobotFrameworkKeywordProvider implements vscode.TreeDataProvider<KeywordTr
 
     getChildren(element?: KeywordTreeItem): Thenable<KeywordTreeItem[]> {
         if (!element) {
-            if (this.viewType === 'project') {
-                return Promise.resolve(this.getProjectKeywordCategories());
+            if (this.searchTerm) {
+                // Return search results directly when searching
+                return Promise.resolve(this.getSearchResults());
             } else {
-                return Promise.resolve(this.getOfficialKeywordCategories());
+                // Normal tree view
+                if (this.viewType === 'project') {
+                    return Promise.resolve(this.getProjectKeywordCategories());
+                } else {
+                    return Promise.resolve(this.getOfficialKeywordCategories());
+                }
             }
         }
 
@@ -1823,6 +1946,52 @@ class RobotFrameworkKeywordProvider implements vscode.TreeDataProvider<KeywordTr
         }
     }
 
+    private getSearchResults(): KeywordTreeItem[] {
+        const results: KeywordTreeItem[] = [];
+
+        if (this.viewType === 'project') {
+            // Search in project keywords
+            const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
+            const customKeywords = config.get('customKeywords', []) as any[];
+
+            customKeywords.forEach(keyword => {
+                if (keyword.name.toLowerCase().includes(this.searchTerm)) {
+                    results.push(new KeywordTreeItem(
+                        keyword.name,
+                        vscode.TreeItemCollapsibleState.None,
+                        keyword.implementation,
+                        keyword.library || 'Custom',
+                        'keyword'
+                    ));
+                }
+            });
+        } else {
+            // Search in official keywords
+            const officialKeywords = getAllOfficialKeywords();
+            officialKeywords.forEach(keyword => {
+                if (keyword.name.toLowerCase().includes(this.searchTerm)) {
+                    results.push(new KeywordTreeItem(
+                        keyword.name,
+                        vscode.TreeItemCollapsibleState.None,
+                        keyword.implementation,
+                        keyword.library,
+                        'keyword'
+                    ));
+                }
+            });
+        }
+
+        if (results.length === 0) {
+            return [new KeywordTreeItem(
+                `No keywords found matching "${this.searchTerm}"`,
+                vscode.TreeItemCollapsibleState.None,
+                undefined,
+                'Empty'
+            )];
+        }
+
+        return results;
+    }
 
     private getProjectKeywordCategories(): KeywordTreeItem[] {
         const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
@@ -2366,8 +2535,19 @@ class RobotFrameworkKeywordProvider implements vscode.TreeDataProvider<KeywordTr
 class VariablesProvider implements vscode.TreeDataProvider<VariableTreeItem> {
     private _onDidChangeTreeData: vscode.EventEmitter<VariableTreeItem | undefined | null | void> = new vscode.EventEmitter<VariableTreeItem | undefined | null | void>();
     readonly onDidChangeTreeData: vscode.Event<VariableTreeItem | undefined | null | void> = this._onDidChangeTreeData.event;
+    private searchTerm: string = '';
 
     refresh(): void {
+        this._onDidChangeTreeData.fire();
+    }
+
+    setSearchTerm(term: string): void {
+        this.searchTerm = term.toLowerCase();
+        this._onDidChangeTreeData.fire();
+    }
+
+    clearSearch(): void {
+        this.searchTerm = '';
         this._onDidChangeTreeData.fire();
     }
 
@@ -2377,7 +2557,13 @@ class VariablesProvider implements vscode.TreeDataProvider<VariableTreeItem> {
 
     getChildren(element?: VariableTreeItem): Thenable<VariableTreeItem[]> {
         if (!element) {
-            return Promise.resolve(this.getVariableCategories());
+            if (this.searchTerm) {
+                // Return search results directly when searching
+                return Promise.resolve(this.getVariableSearchResults());
+            } else {
+                // Normal tree view
+                return Promise.resolve(this.getVariableCategories());
+            }
         }
 
         // Check if this is a folder
@@ -2387,6 +2573,34 @@ class VariablesProvider implements vscode.TreeDataProvider<VariableTreeItem> {
             // This is a file, return variables in this file
             return Promise.resolve(this.getVariablesForFile(element.label));
         }
+    }
+
+    private getVariableSearchResults(): VariableTreeItem[] {
+        const results: VariableTreeItem[] = [];
+        const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
+        const discoveredVariables = config.get('discoveredVariables', []) as any[];
+
+        discoveredVariables.forEach(variable => {
+            if (variable.name.toLowerCase().includes(this.searchTerm)) {
+                results.push(new VariableTreeItem(
+                    variable.name,
+                    vscode.TreeItemCollapsibleState.None,
+                    variable,
+                    'variable'
+                ));
+            }
+        });
+
+        if (results.length === 0) {
+            return [new VariableTreeItem(
+                `No variables found matching "${this.searchTerm}"`,
+                vscode.TreeItemCollapsibleState.None,
+                null,
+                'empty'
+            )];
+        }
+
+        return results;
     }
 
     private getVariableCategories(): VariableTreeItem[] {

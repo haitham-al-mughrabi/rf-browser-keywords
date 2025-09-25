@@ -138,6 +138,26 @@
         "command": "rfDocumentation.clear",
         "title": "Clear Documentation",
         "icon": "$(clear-all)"
+      },
+      {
+        "command": "rfKeywords.searchKeywords",
+        "title": "Search Keywords",
+        "icon": "$(search)"
+      },
+      {
+        "command": "rfVariables.searchVariables",
+        "title": "Search Variables",
+        "icon": "$(search)"
+      },
+      {
+        "command": "rfKeywords.clearSearch",
+        "title": "Clear Search",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "rfVariables.clearSearch",
+        "title": "Clear Search",
+        "icon": "$(clear-all)"
       }
     ],
     "menus": {
@@ -195,9 +215,29 @@
           "group": "navigation@3"
         },
         {
+          "command": "rfKeywords.searchKeywords",
+          "when": "view == rfProjectKeywords || view == rfOfficialKeywords",
+          "group": "navigation@4"
+        },
+        {
+          "command": "rfKeywords.clearSearch",
+          "when": "view == rfProjectKeywords || view == rfOfficialKeywords",
+          "group": "navigation@5"
+        },
+        {
           "command": "rfVariables.refresh",
           "when": "view == rfVariables",
           "group": "navigation@1"
+        },
+        {
+          "command": "rfVariables.searchVariables",
+          "when": "view == rfVariables",
+          "group": "navigation@2"
+        },
+        {
+          "command": "rfVariables.clearSearch",
+          "when": "view == rfVariables",
+          "group": "navigation@3"
         },
         {
           "command": "rfDocumentation.copyDocumentation",
