@@ -77,16 +77,6 @@ export function activate(context: vscode.ExtensionContext) {
         variablesProvider.refresh();
     });
 
-    vscode.commands.registerCommand('rfKeywords.editKeywordDefaults', async () => {
-        await editKeywordDefaults();
-    });
-
-    vscode.commands.registerCommand('rfKeywords.addCustomKeyword', async () => {
-        await addCustomKeyword();
-        projectProvider.refresh();
-        officialProvider.refresh();
-        variablesProvider.refresh();
-    });
 
     vscode.commands.registerCommand('rfKeywords.importFile', async (item: KeywordTreeItem) => {
         await importLibraryOrResource(item);
@@ -521,152 +511,7 @@ function checkExistingImport(editor: vscode.TextEditor, importType: string, impo
 }
 
 
-function getBuiltInDefault(paramName: string): string {
-    const builtInDefaults: Record<string, string> = {
-        'url': 'https://example.com',
-        'selector': 'css=.my-element',
-        'text': 'Sample text',
-        'browser': 'chromium',
-        'timeout': '10s',
-        'filename': 'screenshot.png',
-        'path': '/path/to/file',
-        'message': 'Test message',
-        'value': 'test_value',
-        'key': 'test_key'
-    };
-    return builtInDefaults[paramName] || '';
-}
 
-async function editKeywordDefaults(): Promise<void> {
-    const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
-    const currentDefaults = config.get('defaultValues', {}) as Record<string, string>;
-
-    const result = await vscode.window.showQuickPick([
-        { label: '$(add) Add New Default', action: 'add' },
-        { label: '$(edit) Edit Existing Defaults', action: 'edit' },
-        { label: '$(trash) Reset to Defaults', action: 'reset' }
-    ], {
-        placeHolder: 'Choose an action for keyword defaults'
-    });
-
-    if (!result) return;
-
-    switch (result.action) {
-        case 'add':
-            await addNewDefault(currentDefaults);
-            break;
-        case 'edit':
-            await editExistingDefaults(currentDefaults);
-            break;
-        case 'reset':
-            await resetDefaults();
-            break;
-    }
-}
-
-async function addNewDefault(currentDefaults: Record<string, string>): Promise<void> {
-    const paramName = await vscode.window.showInputBox({
-        prompt: 'Enter parameter name (without ${} brackets)',
-        placeHolder: 'e.g., url, selector, text'
-    });
-
-    if (!paramName) return;
-
-    const defaultValue = await vscode.window.showInputBox({
-        prompt: `Enter default value for parameter: ${paramName}`,
-        placeHolder: 'Default value'
-    });
-
-    if (defaultValue !== undefined) {
-        currentDefaults[paramName] = defaultValue;
-        const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
-        await config.update('defaultValues', currentDefaults, vscode.ConfigurationTarget.Global);
-        vscode.window.showInformationMessage(`Added default for ${paramName}: ${defaultValue}`);
-    }
-}
-
-async function editExistingDefaults(currentDefaults: Record<string, string>): Promise<void> {
-    const items = Object.entries(currentDefaults).map(([key, value]) => ({
-        label: key,
-        description: value,
-        key: key,
-        value: value
-    }));
-
-    const selected = await vscode.window.showQuickPick(items, {
-        placeHolder: 'Select parameter to edit'
-    });
-
-    if (!selected) return;
-
-    const newValue = await vscode.window.showInputBox({
-        prompt: `Edit default value for: ${selected.key}`,
-        value: selected.value
-    });
-
-    if (newValue !== undefined) {
-        currentDefaults[selected.key] = newValue;
-        const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
-        await config.update('defaultValues', currentDefaults, vscode.ConfigurationTarget.Global);
-        vscode.window.showInformationMessage(`Updated default for ${selected.key}: ${newValue}`);
-    }
-}
-
-async function resetDefaults(): Promise<void> {
-    const confirmed = await vscode.window.showWarningMessage(
-        'Reset all keyword defaults to built-in values?',
-        { modal: true },
-        'Reset'
-    );
-
-    if (confirmed === 'Reset') {
-        const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
-        await config.update('defaultValues', undefined, vscode.ConfigurationTarget.Global);
-        vscode.window.showInformationMessage('Keyword defaults reset to built-in values');
-    }
-}
-
-async function addCustomKeyword(): Promise<void> {
-    const name = await vscode.window.showInputBox({
-        prompt: 'Enter keyword name',
-        placeHolder: 'e.g., My Custom Keyword'
-    });
-
-    if (!name) return;
-
-    const implementation = await vscode.window.showInputBox({
-        prompt: 'Enter keyword implementation',
-        placeHolder: 'e.g., My Custom Keyword    ${param1}    ${param2}'
-    });
-
-    if (!implementation) return;
-
-    const library = await vscode.window.showInputBox({
-        prompt: 'Enter library name',
-        placeHolder: 'e.g., Custom, MyLibrary',
-        value: 'Custom'
-    });
-
-    if (!library) return;
-
-    const description = await vscode.window.showInputBox({
-        prompt: 'Enter description (optional)',
-        placeHolder: 'Brief description of what this keyword does'
-    });
-
-    const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
-    const customKeywords = config.get('customKeywords', []) as any[];
-
-    customKeywords.push({
-        name,
-        implementation,
-        library,
-        description: description || ''
-    });
-
-    await config.update('customKeywords', customKeywords, vscode.ConfigurationTarget.Global);
-    vscode.window.showInformationMessage(`Added custom keyword: ${name}`);
-}
 
 async function scanWorkspaceKeywords(): Promise<void> {
     const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
@@ -2766,8 +2611,12 @@ class VariablesProvider implements vscode.TreeDataProvider<VariableTreeItem> {
             }
         }
 
-        // Check if this is a folder (folders have folderPath but no filePath)
-        if (element.folderPath !== undefined && !element.filePath) {
+        // Check if this is a folder or file
+        if ((element as any).folderNode !== undefined) {
+            // This is a hierarchical folder, return its contents
+            return Promise.resolve(this.getVariableFolderNodeContents((element as any).folderNode));
+        } else if (element.folderPath !== undefined && !element.filePath) {
+            // Legacy flat folder, return files in this folder
             return Promise.resolve(this.getFilesInFolder(element.folderPath));
         } else {
             // This is a file, return variables in this file
@@ -2822,55 +2671,170 @@ class VariablesProvider implements vscode.TreeDataProvider<VariableTreeItem> {
     }
 
     private getFileBasedCategories(variables: any[]): VariableTreeItem[] {
-        const folderStructure = new Map<string, Map<string, any[]>>();
+        // Build hierarchical folder structure
+        const folderTree = this.buildVariableFolderTree(variables);
+        const items = this.createVariableFolderTreeItems(folderTree);
 
-        // Group variables by folder path and then by file
+        return items;
+    }
+
+    private buildVariableFolderTree(variables: any[]): FolderNode {
+        const root: FolderNode = { name: 'Root', children: new Map(), files: new Map() };
+
         variables.forEach(variable => {
-            let folderPath = variable.folderPath || 'Root';
+            if (variable.source === 'python' || variable.source === 'robot') {
+                let folderPath = variable.folderPath || 'Root';
 
-            // Normalize folder path
-            if (folderPath === '.' || folderPath === '') {
-                folderPath = 'Root';
+                // Normalize folder path
+                if (folderPath === '.' || folderPath === '') {
+                    folderPath = 'Root';
+                }
+
+                const fileName = variable.fileName;
+
+                // Split path into parts and build tree
+                if (folderPath === 'Root') {
+                    // Add directly to root
+                    if (!root.files.has(fileName)) {
+                        root.files.set(fileName, []);
+                    }
+                    root.files.get(fileName)!.push(variable);
+                } else {
+                    // Navigate/create folder structure
+                    const pathParts = folderPath.split(/[\/\\]/);
+                    let currentNode = root;
+
+                    for (const part of pathParts) {
+                        if (!currentNode.children.has(part)) {
+                            currentNode.children.set(part, { name: part, children: new Map(), files: new Map() });
+                        }
+                        currentNode = currentNode.children.get(part)!;
+                    }
+
+                    // Add file to the final folder
+                    if (!currentNode.files.has(fileName)) {
+                        currentNode.files.set(fileName, []);
+                    }
+                    currentNode.files.get(fileName)!.push(variable);
+                }
             }
-
-            const fileName = variable.fileName;
-
-            if (!folderStructure.has(folderPath)) {
-                folderStructure.set(folderPath, new Map());
-            }
-
-            const folderFiles = folderStructure.get(folderPath)!;
-            if (!folderFiles.has(fileName)) {
-                folderFiles.set(fileName, []);
-            }
-            folderFiles.get(fileName)!.push(variable);
         });
 
-        // Create tree structure
-        const categories: VariableTreeItem[] = [];
+        return root;
+    }
 
-        // Sort folders alphabetically
-        const sortedFolders = Array.from(folderStructure.keys()).sort();
+    private createVariableFolderTreeItems(folderNode: FolderNode, parentPath: string = ''): VariableTreeItem[] {
+        const items: VariableTreeItem[] = [];
 
-        sortedFolders.forEach(folderPath => {
-            const files = folderStructure.get(folderPath)!;
+        // Create folder items for child folders (skip root level display)
+        const sortedFolders = Array.from(folderNode.children.keys()).sort();
+        for (const folderName of sortedFolders) {
+            const childNode = folderNode.children.get(folderName)!;
+            const currentPath = parentPath ? `${parentPath}/${folderName}` : folderName;
 
-            // Create folder category
-            const folderDisplayName = this.formatFolderName(folderPath);
             const folderItem = new VariableTreeItem(
-                folderDisplayName,
+                folderName,
                 vscode.TreeItemCollapsibleState.Collapsed,
-                undefined, // no variable data for folder
-                folderPath, // folder path
+                undefined,
+                currentPath, // folder path
+                undefined    // no file path for folder items
+            );
+
+            // Store the full path and node reference for later retrieval
+            (folderItem as any).folderNode = childNode;
+            items.push(folderItem);
+        }
+
+        // Add files directly to this level (only for root level initially)
+        if (parentPath === '') {
+            items.push(...this.createVariableFileItemsFromNode(folderNode));
+        }
+
+        return items;
+    }
+
+    private createVariableFileItemsFromNode(folderNode: FolderNode): VariableTreeItem[] {
+        const fileItems: VariableTreeItem[] = [];
+
+        // Sort files alphabetically
+        const sortedFiles = Array.from(folderNode.files.keys()).sort();
+
+        sortedFiles.forEach(fileName => {
+            const variables = folderNode.files.get(fileName)!;
+
+            // Determine file type and display name
+            let displayName = fileName;
+            let fileType = 'Variables';
+
+            if (!fileName.includes('.')) {
+                if (variables[0].source === 'python') {
+                    displayName = `${fileName}.py`;
+                    fileType = 'Python Variables';
+                } else if (variables[0].fileType === 'resource') {
+                    displayName = `${fileName}.resource`;
+                    fileType = 'Resource Variables';
+                } else {
+                    displayName = `${fileName}.robot`;
+                    fileType = 'Robot Variables';
+                }
+            } else {
+                // File already has extension
+                if (fileName.endsWith('.py')) {
+                    fileType = 'Python Variables';
+                } else if (fileName.endsWith('.resource')) {
+                    fileType = 'Resource Variables';
+                } else {
+                    fileType = 'Robot Variables';
+                }
+            }
+
+            // Get the file path from the first variable in this file
+            const firstVariable = variables[0];
+            const targetFilePath = firstVariable.filePath;
+
+            const fileItem = new VariableTreeItem(
+                displayName,
+                vscode.TreeItemCollapsibleState.Collapsed,
+                undefined, // no specific variable, this is a file container
+                undefined, // no folder path for file items
+                targetFilePath // pass the file path
+            );
+
+            // Set context value for menus
+            fileItem.contextValue = fileType === 'Python Variables' ? 'pythonVariableFile' :
+                                  fileType === 'Resource Variables' ? 'resourceVariableFile' : 'robotVariableFile';
+
+            fileItems.push(fileItem);
+        });
+
+        return fileItems.sort((a, b) => a.label.localeCompare(b.label));
+    }
+
+    private getVariableFolderNodeContents(folderNode: FolderNode): VariableTreeItem[] {
+        const items: VariableTreeItem[] = [];
+
+        // Add subfolders first
+        const sortedFolders = Array.from(folderNode.children.keys()).sort();
+        for (const folderName of sortedFolders) {
+            const childNode = folderNode.children.get(folderName)!;
+
+            const folderItem = new VariableTreeItem(
+                folderName,
+                vscode.TreeItemCollapsibleState.Collapsed,
+                undefined,
+                undefined, // no folder path for hierarchical folders
                 undefined  // no file path for folder items
             );
 
-            // Store original folder path for later retrieval
-            (folderItem as any).folderPath = folderPath;
-            categories.push(folderItem);
-        });
+            // Store node reference for navigation
+            (folderItem as any).folderNode = childNode;
+            items.push(folderItem);
+        }
 
-        return categories;
+        // Add files in this folder
+        items.push(...this.createVariableFileItemsFromNode(folderNode));
+
+        return items;
     }
 
     private formatFolderName(folderPath: string): string {
@@ -3638,8 +3602,6 @@ function extractKeywordParameters(implementation: string): any[] {
 
     // Fallback to placeholder extraction for other formats
     const placeholders = implementation.match(/\$\{[^}]+\}/g) || [];
-    const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
-    const defaultValues = config.get('defaultValues', {}) as Record<string, string>;
 
     // Filter out common default values that shouldn't be parameters
     const commonDefaults = ['True', 'False', 'None', 'EMPTY', 'DEFAULT_WAIT_ELEMENT_STATE_TIMEOUT'];
@@ -3653,13 +3615,11 @@ function extractKeywordParameters(implementation: string): any[] {
 
     return uniquePlaceholders.map(placeholder => {
         const paramName = placeholder.replace(/\$\{|\}/g, '');
-        const defaultValue = defaultValues[paramName] || getBuiltInDefaultStandalone(paramName);
 
         return {
             name: paramName,
             placeholder: placeholder,
             value: '', // Empty for direct insert/copy
-            defaultValue: defaultValue,
             originalDefault: null,
             hidden: false // Initialize as visible
         };
@@ -3668,8 +3628,6 @@ function extractKeywordParameters(implementation: string): any[] {
 
 function parseRobotFrameworkArgumentsStandalone(argumentsLine: string): any[] {
     const parameters: any[] = [];
-    const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
-    const defaultValues = config.get('defaultValues', {}) as Record<string, string>;
 
     // Clean up the arguments line - remove extra whitespace and "..." separators
     const cleanLine = argumentsLine.replace(/\.\.\./g, '').trim();
@@ -3689,13 +3647,10 @@ function parseRobotFrameworkArgumentsStandalone(argumentsLine: string): any[] {
                 originalDefault = originalDefault.replace(/\$\{|\}/g, '');
             }
 
-            const userDefault = defaultValues[paramName] || getBuiltInDefaultStandalone(paramName);
-
             parameters.push({
                 name: paramName,
                 placeholder: `\${${paramName}}`,
                 value: '', // Empty for direct insert/copy
-                defaultValue: userDefault,
                 originalDefault: originalDefault,
                 hidden: false // Initialize as visible
             });
@@ -3705,18 +3660,3 @@ function parseRobotFrameworkArgumentsStandalone(argumentsLine: string): any[] {
     return parameters;
 }
 
-function getBuiltInDefaultStandalone(paramName: string): string {
-    const builtInDefaults: Record<string, string> = {
-        'url': 'https://example.com',
-        'selector': 'css=.my-element',
-        'text': 'Sample text',
-        'browser': 'chromium',
-        'timeout': '10s',
-        'filename': 'screenshot.png',
-        'path': '/path/to/file',
-        'message': 'Test message',
-        'value': 'test_value',
-        'key': 'test_key'
-    };
-    return builtInDefaults[paramName] || '';
-}

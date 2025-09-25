@@ -90,16 +90,6 @@
         "icon": "$(refresh)"
       },
       {
-        "command": "rfKeywords.editKeywordDefaults",
-        "title": "Edit Keyword Defaults",
-        "icon": "$(settings)"
-      },
-      {
-        "command": "rfKeywords.addCustomKeyword",
-        "title": "Add Custom Keyword",
-        "icon": "$(plus)"
-      },
-      {
         "command": "rfKeywords.importFile",
         "title": "Import Library/Resource",
         "icon": "$(arrow-down)"
@@ -214,7 +204,7 @@
         },
         {
           "command": "rfVariables.importFile",
-          "when": "view == rfVariables && viewItem == variableFile",
+          "when": "view == rfVariables && (viewItem == pythonVariableFile || viewItem == robotVariableFile || viewItem == resourceVariableFile)",
           "group": "inline@1"
         },
         {
@@ -230,29 +220,19 @@
       ],
       "view/title": [
         {
-          "command": "rfKeywords.addCustomKeyword",
+          "command": "rfKeywords.refresh",
           "when": "view == rfProjectKeywords",
           "group": "navigation@1"
         },
         {
-          "command": "rfKeywords.editKeywordDefaults",
+          "command": "rfKeywords.searchKeywords",
           "when": "view == rfProjectKeywords || view == rfOfficialKeywords",
           "group": "navigation@2"
         },
         {
-          "command": "rfKeywords.refresh",
-          "when": "view == rfProjectKeywords",
-          "group": "navigation@3"
-        },
-        {
-          "command": "rfKeywords.searchKeywords",
-          "when": "view == rfProjectKeywords || view == rfOfficialKeywords",
-          "group": "navigation@4"
-        },
-        {
           "command": "rfKeywords.clearSearch",
           "when": "view == rfProjectKeywords || view == rfOfficialKeywords",
-          "group": "navigation@5"
+          "group": "navigation@3"
         },
         {
           "command": "rfVariables.refresh",
@@ -297,7 +277,7 @@
         "robotFrameworkKeywords.customKeywords": {
           "type": "array",
           "default": [],
-          "description": "Custom keywords defined by the user",
+          "description": "Keywords discovered from workspace scanning",
           "items": {
             "type": "object",
             "properties": {
@@ -315,22 +295,6 @@
               }
             }
           }
-        },
-        "robotFrameworkKeywords.defaultValues": {
-          "type": "object",
-          "default": {
-            "url": "https://example.com",
-            "selector": "css=.my-element",
-            "text": "Sample text",
-            "browser": "chromium",
-            "timeout": "10s",
-            "filename": "screenshot.png",
-            "path": "/path/to/file",
-            "message": "Test message",
-            "value": "test_value",
-            "key": "test_key"
-          },
-          "description": "Default values for keyword parameters"
         },
         "robotFrameworkKeywords.scanCustomKeywords": {
           "type": "boolean",
