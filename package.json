@@ -179,7 +179,7 @@
         },
         {
           "command": "rfKeywords.importFile",
-          "when": "view == rfProjectKeywords && viewItem == library",
+          "when": "view == rfProjectKeywords && (viewItem == 'Python Library' || viewItem == 'Resource Keywords' || viewItem == 'Robot Keywords')",
           "group": "inline@1"
         },
         {

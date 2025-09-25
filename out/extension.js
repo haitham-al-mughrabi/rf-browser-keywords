@@ -1337,7 +1337,7 @@ class KeywordTreeItem extends vscode.TreeItem {
         }
         else {
             this.tooltip = `${this.label} library keywords`;
-            this.contextValue = 'library';
+            this.contextValue = library || 'library';
             // Set appropriate icons for different file types
             if (this.label.endsWith('.py')) {
                 this.iconPath = new vscode.ThemeIcon('file-code');
