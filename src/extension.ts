@@ -92,6 +92,15 @@ export function activate(context: vscode.ExtensionContext) {
         await importLibraryOrResource(item);
     });
 
+    vscode.commands.registerCommand('rfKeywords.openFile', async (item: KeywordTreeItem) => {
+        if (item.filePath && fs.existsSync(item.filePath)) {
+            const document = await vscode.workspace.openTextDocument(item.filePath);
+            await vscode.window.showTextDocument(document);
+        } else {
+            vscode.window.showErrorMessage(`Unable to open file: ${item.filePath || 'File path not found'}`);
+        }
+    });
+
     // Variable commands
     vscode.commands.registerCommand('rfVariables.insertVariable', (item: VariableTreeItem) => {
         if (item.variable) {
@@ -128,6 +137,14 @@ export function activate(context: vscode.ExtensionContext) {
 
     vscode.commands.registerCommand('rfVariables.importFile', async (item: VariableTreeItem) => {
         await importVariableFile(item);
+    });
+
+    vscode.commands.registerCommand('rfVariables.openFile', async (item: VariableTreeItem) => {
+        const targetFilePath = item.filePath || (item.variable && item.variable.filePath);
+        if (targetFilePath && fs.existsSync(targetFilePath)) {
+            const document = await vscode.workspace.openTextDocument(targetFilePath);
+            await vscode.window.showTextDocument(document);
+        }
     });
 
     vscode.commands.registerCommand('rfVariables.refresh', async () => {
@@ -1058,11 +1075,15 @@ function extractPythonKeywords(content: string, filePath: string, basePath?: str
     const fileName = path.basename(filePath, '.py');
 
     // Match Python methods with @keyword decorator or public methods
-    // Pattern 1: @keyword("Keyword Name") or @keyword decorator
-    const keywordDecoratorRegex = /@keyword\s*\(\s*['"](.*?)['"][\s\S]*?\)\s*\n\s*def\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\([^)]*\):/g;
-    const simpleKeywordDecoratorRegex = /@keyword\s*\n\s*def\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\([^)]*\):/g;
-    // Pattern 2: Regular public methods (fallback)
-    const methodRegex = /def\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\([^)]*\):/g;
+    // Support different import patterns: @keyword, @robot.api.deco.keyword, etc.
+    const keywordPattern = '(?:@(?:robot\\.api\\.deco\\.)?keyword|@keyword)';
+
+    // Pattern 1: @keyword("Keyword Name") with custom name (fixed to not jump across methods)
+    const keywordDecoratorRegex = new RegExp(`${keywordPattern}\\s*\\(\\s*['\"](.*?)['\"].*?\\)\\s*\\n\\s*def\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\(`, 'g');
+    // Pattern 2: @keyword (simple decorator) - handles @keyword, @keyword(), and variations
+    const simpleKeywordDecoratorRegex = new RegExp(`${keywordPattern}\\s*(?:\\(\\s*\\))?\\s*\\n\\s*def\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\(`, 'g');
+    // Pattern 3: Regular public methods (fallback) - more flexible multiline support
+    const methodRegex = /def\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\([^)]*\)\s*:/gm;
 
     // Get relative path from workspace for organization
     const workspaceFolders = vscode.workspace.workspaceFolders;
@@ -1083,6 +1104,8 @@ function extractPythonKeywords(content: string, filePath: string, basePath?: str
     }
 
     const processedKeywords = new Set<string>(); // To avoid duplicates
+
+    // Keywords extraction logic
 
     // First, process @keyword("Custom Name") decorators
     let match;
@@ -1108,10 +1131,14 @@ function extractPythonKeywords(content: string, filePath: string, basePath?: str
     keywordDecoratorRegex.lastIndex = 0;
 
     // Second, process simple @keyword decorators
+    simpleKeywordDecoratorRegex.lastIndex = 0; // Reset before use
+
     while ((match = simpleKeywordDecoratorRegex.exec(content)) !== null) {
         const methodName = match[1];
 
-        if (processedKeywords.has(methodName)) continue;
+        if (processedKeywords.has(methodName)) {
+            continue;
+        }
         processedKeywords.add(methodName);
 
         // Convert snake_case to Title Case for Robot Framework
@@ -1597,15 +1624,31 @@ class KeywordTreeItem extends vscode.TreeItem {
             this.tooltip = `${this.label} library keywords`;
             this.contextValue = library || 'library';
 
-            // Set appropriate icons for different file types
+            // Set appropriate icons and commands for different file types
+            const isFile = this.label.endsWith('.py') || this.label.endsWith('.robot') || this.label.endsWith('.resource');
+
             if (this.label.endsWith('.py')) {
                 this.iconPath = new vscode.ThemeIcon('file-code');
+                // Keep the library context value for import functionality
+                this.contextValue = library || 'Python Library';
             } else if (this.label.endsWith('.robot')) {
                 this.iconPath = new vscode.ThemeIcon('robot');
+                this.contextValue = library || 'Robot Keywords';
             } else if (this.label.endsWith('.resource')) {
                 this.iconPath = new vscode.ThemeIcon('symbol-module');
+                this.contextValue = library || 'Resource Keywords';
             } else {
                 this.iconPath = new vscode.ThemeIcon('folder');
+            }
+
+            // Add "Open File" command for file items only
+            if (isFile && this.filePath) {
+                this.command = {
+                    command: 'rfKeywords.openFile',
+                    title: 'Open File',
+                    arguments: [this]
+                };
+                this.tooltip = `${this.label} - Click to open file`;
             }
         }
     }
@@ -1652,13 +1695,18 @@ class KeywordTreeItem extends vscode.TreeItem {
 }
 
 class VariableTreeItem extends vscode.TreeItem {
+    public readonly filePath?: string;
+
     constructor(
         public readonly label: string,
         public readonly collapsibleState: vscode.TreeItemCollapsibleState,
         public readonly variable?: any,
-        public readonly folderPath?: string
+        public readonly folderPath?: string,
+        filePath?: string
     ) {
         super(label, collapsibleState);
+
+        this.filePath = filePath;
 
         if (variable) {
             this.tooltip = `${this.label}: ${variable.value}`;
@@ -1682,15 +1730,30 @@ class VariableTreeItem extends vscode.TreeItem {
             this.tooltip = `${this.label} variables`;
             this.contextValue = 'variableFile';
 
-            // Set appropriate icons for different file types
+            // Set appropriate icons and commands for different file types
+            const isFile = this.label.endsWith('.py') || this.label.endsWith('.robot') || this.label.endsWith('.resource');
+
             if (this.label.endsWith('.py')) {
                 this.iconPath = new vscode.ThemeIcon('file-code');
+                this.contextValue = 'pythonVariableFile';
             } else if (this.label.endsWith('.robot')) {
                 this.iconPath = new vscode.ThemeIcon('robot');
+                this.contextValue = 'robotVariableFile';
             } else if (this.label.endsWith('.resource')) {
                 this.iconPath = new vscode.ThemeIcon('symbol-module');
+                this.contextValue = 'resourceVariableFile';
             } else {
                 this.iconPath = new vscode.ThemeIcon('folder');
+            }
+
+            // Add "Open File" command for file items only
+            if (isFile && this.filePath) {
+                this.command = {
+                    command: 'rfVariables.openFile',
+                    title: 'Open File',
+                    arguments: [this]
+                };
+                this.tooltip = `${this.label} - Click to open file`;
             }
         }
     }
@@ -1781,6 +1844,12 @@ async function searchVariables(variablesProvider: VariablesProvider): Promise<vo
     variablesProvider.setSearchTerm(searchTerm);
 
     vscode.window.showInformationMessage(`Showing variables matching "${searchTerm}". Click on any result to insert it.`);
+}
+
+interface FolderNode {
+    name: string;
+    children: Map<string, FolderNode>;
+    files: Map<string, any[]>;
 }
 
 function getAllOfficialKeywords(): Array<{name: string, library: string, implementation: string}> {
@@ -1936,8 +2005,11 @@ class RobotFrameworkKeywordProvider implements vscode.TreeDataProvider<KeywordTr
 
             default:
                 // Check if this is a folder or file
-                if ((element as any).folderPath !== undefined) {
-                    // This is a folder, return files in this folder
+                if ((element as any).folderNode !== undefined) {
+                    // This is a hierarchical folder, return its contents
+                    return Promise.resolve(this.getFolderNodeContents((element as any).folderNode));
+                } else if ((element as any).folderPath !== undefined) {
+                    // Legacy flat folder, return files in this folder
                     return Promise.resolve(this.getFilesInFolder((element as any).folderPath));
                 } else {
                     // This is a file, return keywords in this file
@@ -2023,59 +2095,14 @@ class RobotFrameworkKeywordProvider implements vscode.TreeDataProvider<KeywordTr
     }
 
     private getFileBasedCategories(customKeywords: any[]): KeywordTreeItem[] {
-        const folderStructure = new Map<string, Map<string, any[]>>();
-
-        // Group keywords by folder path and then by file
-        customKeywords.forEach(keyword => {
-            if (keyword.source === 'python' || keyword.source === 'robot') {
-                let folderPath = keyword.folderPath || 'Root';
-
-                // Normalize folder path - convert all root representations to 'Root'
-                if (folderPath === '.' || folderPath === '') {
-                    folderPath = 'Root';
-                }
-
-                const fileName = keyword.library;
-
-                if (!folderStructure.has(folderPath)) {
-                    folderStructure.set(folderPath, new Map());
-                }
-
-                const folderFiles = folderStructure.get(folderPath)!;
-                if (!folderFiles.has(fileName)) {
-                    folderFiles.set(fileName, []);
-                }
-                folderFiles.get(fileName)!.push(keyword);
-            }
-        });
-
-        // Create tree structure
-        const categories: KeywordTreeItem[] = [];
-
-        // Sort folders alphabetically
-        const sortedFolders = Array.from(folderStructure.keys()).sort();
-
-        sortedFolders.forEach(folderPath => {
-            const files = folderStructure.get(folderPath)!;
-
-            // Create folder category with arrow notation for display
-            const folderDisplayName = this.formatFolderName(folderPath);
-            const folderItem = new KeywordTreeItem(
-                folderDisplayName,
-                vscode.TreeItemCollapsibleState.Collapsed,
-                undefined,
-                'Folder'
-            );
-
-            // Store original folder path for later retrieval
-            (folderItem as any).folderPath = folderPath;
-            categories.push(folderItem);
-        });
+        // Build hierarchical folder structure
+        const folderTree = this.buildFolderTree(customKeywords);
+        const items = this.createFolderTreeItems(folderTree);
 
         // Add manually created keywords under "Custom Keywords" if any exist
         const manualKeywords = customKeywords.filter(keyword => !keyword.source);
         if (manualKeywords.length > 0) {
-            categories.push(new KeywordTreeItem(
+            items.push(new KeywordTreeItem(
                 'Custom Keywords',
                 vscode.TreeItemCollapsibleState.Collapsed,
                 undefined,
@@ -2083,7 +2110,163 @@ class RobotFrameworkKeywordProvider implements vscode.TreeDataProvider<KeywordTr
             ));
         }
 
-        return categories;
+        return items;
+    }
+
+    private buildFolderTree(customKeywords: any[]): FolderNode {
+        const root: FolderNode = { name: 'Root', children: new Map(), files: new Map() };
+
+        customKeywords.forEach(keyword => {
+            if (keyword.source === 'python' || keyword.source === 'robot') {
+                let folderPath = keyword.folderPath || 'Root';
+
+                // Normalize folder path
+                if (folderPath === '.' || folderPath === '') {
+                    folderPath = 'Root';
+                }
+
+                const fileName = keyword.library;
+
+                // Split path into parts and build tree
+                if (folderPath === 'Root') {
+                    // Add directly to root
+                    if (!root.files.has(fileName)) {
+                        root.files.set(fileName, []);
+                    }
+                    root.files.get(fileName)!.push(keyword);
+                } else {
+                    // Navigate/create folder structure
+                    const pathParts = folderPath.split(/[\/\\]/);
+                    let currentNode = root;
+
+                    for (const part of pathParts) {
+                        if (!currentNode.children.has(part)) {
+                            currentNode.children.set(part, { name: part, children: new Map(), files: new Map() });
+                        }
+                        currentNode = currentNode.children.get(part)!;
+                    }
+
+                    // Add file to the final folder
+                    if (!currentNode.files.has(fileName)) {
+                        currentNode.files.set(fileName, []);
+                    }
+                    currentNode.files.get(fileName)!.push(keyword);
+                }
+            }
+        });
+
+        return root;
+    }
+
+    private createFolderTreeItems(folderNode: FolderNode, parentPath: string = ''): KeywordTreeItem[] {
+        const items: KeywordTreeItem[] = [];
+
+        // Create folder items for child folders (skip root level display)
+        const sortedFolders = Array.from(folderNode.children.keys()).sort();
+        for (const folderName of sortedFolders) {
+            const childNode = folderNode.children.get(folderName)!;
+            const currentPath = parentPath ? `${parentPath}/${folderName}` : folderName;
+
+            const folderItem = new KeywordTreeItem(
+                folderName,
+                vscode.TreeItemCollapsibleState.Collapsed,
+                undefined,
+                'Folder'
+            );
+
+            // Store the full path and node reference for later retrieval
+            (folderItem as any).folderPath = currentPath;
+            (folderItem as any).folderNode = childNode;
+            items.push(folderItem);
+        }
+
+        // Add files directly to this level (only for root level initially)
+        if (parentPath === '') {
+            items.push(...this.createFileItemsFromNode(folderNode));
+        }
+
+        return items;
+    }
+
+    private createFileItemsFromNode(folderNode: FolderNode): KeywordTreeItem[] {
+        const fileItems: KeywordTreeItem[] = [];
+
+        // Sort files alphabetically
+        const sortedFiles = Array.from(folderNode.files.keys()).sort();
+
+        sortedFiles.forEach(fileName => {
+            const keywords = folderNode.files.get(fileName)!;
+
+            // Determine file type and display name
+            let displayName = fileName;
+            let libraryType = 'library';
+
+            if (!fileName.includes('.')) {
+                if (keywords[0].source === 'python') {
+                    displayName = `${fileName}.py`;
+                    libraryType = 'Python Library';
+                } else if (keywords[0].fileType === 'resource') {
+                    displayName = `${fileName}.resource`;
+                    libraryType = 'Resource Keywords';
+                } else {
+                    displayName = `${fileName}.robot`;
+                    libraryType = 'Robot Keywords';
+                }
+            } else {
+                // File already has extension
+                if (fileName.endsWith('.py')) {
+                    libraryType = 'Python Library';
+                } else if (fileName.endsWith('.resource')) {
+                    libraryType = 'Resource Keywords';
+                } else {
+                    libraryType = 'Robot Keywords';
+                }
+            }
+
+            // Create a file-level item with file path information
+            const firstKeyword = keywords[0];
+            const fileInfo = {
+                filePath: firstKeyword.filePath,
+                source: firstKeyword.source,
+                fileType: firstKeyword.fileType
+            };
+
+            fileItems.push(new KeywordTreeItem(
+                displayName,
+                vscode.TreeItemCollapsibleState.Collapsed,
+                undefined,
+                libraryType,
+                fileInfo // Pass file information for Open File functionality
+            ));
+        });
+
+        return fileItems;
+    }
+
+    private getFolderNodeContents(folderNode: FolderNode): KeywordTreeItem[] {
+        const items: KeywordTreeItem[] = [];
+
+        // Add subfolders first
+        const sortedFolders = Array.from(folderNode.children.keys()).sort();
+        for (const folderName of sortedFolders) {
+            const childNode = folderNode.children.get(folderName)!;
+
+            const folderItem = new KeywordTreeItem(
+                folderName,
+                vscode.TreeItemCollapsibleState.Collapsed,
+                undefined,
+                'Folder'
+            );
+
+            // Store node reference for navigation
+            (folderItem as any).folderNode = childNode;
+            items.push(folderItem);
+        }
+
+        // Add files in this folder
+        items.push(...this.createFileItemsFromNode(folderNode));
+
+        return items;
     }
 
     private simplifFolderPath(folderPath: string): string {
@@ -2204,11 +2387,20 @@ class RobotFrameworkKeywordProvider implements vscode.TreeDataProvider<KeywordTr
                 }
             }
 
+            // Create a file-level item with file path information
+            const firstKeyword = keywords[0];
+            const fileInfo = {
+                filePath: firstKeyword.filePath,
+                source: firstKeyword.source,
+                fileType: firstKeyword.fileType
+            };
+
             fileItems.push(new KeywordTreeItem(
                 displayName,
                 vscode.TreeItemCollapsibleState.Collapsed,
                 undefined,
-                libraryType
+                libraryType,
+                fileInfo // Pass file information for Open File functionality
             ));
         });
 
@@ -2596,7 +2788,8 @@ class VariablesProvider implements vscode.TreeDataProvider<VariableTreeItem> {
                 `No variables found matching "${this.searchTerm}"`,
                 vscode.TreeItemCollapsibleState.None,
                 null,
-                'empty'
+                'empty',
+                undefined // no file path for search result message
             )];
         }
 
@@ -2610,7 +2803,10 @@ class VariablesProvider implements vscode.TreeDataProvider<VariableTreeItem> {
         if (discoveredVariables.length === 0) {
             return [new VariableTreeItem(
                 'No variables found',
-                vscode.TreeItemCollapsibleState.None
+                vscode.TreeItemCollapsibleState.None,
+                undefined, // no variable data
+                undefined, // no folder path
+                undefined  // no file path for empty state message
             )];
         }
 
@@ -2655,7 +2851,10 @@ class VariablesProvider implements vscode.TreeDataProvider<VariableTreeItem> {
             const folderDisplayName = this.formatFolderName(folderPath);
             const folderItem = new VariableTreeItem(
                 folderDisplayName,
-                vscode.TreeItemCollapsibleState.Collapsed
+                vscode.TreeItemCollapsibleState.Collapsed,
+                undefined, // no variable data for folder
+                folderPath, // folder path
+                undefined  // no file path for folder items
             );
 
             // Store original folder path for later retrieval
@@ -2729,9 +2928,16 @@ class VariablesProvider implements vscode.TreeDataProvider<VariableTreeItem> {
                 }
             }
 
+            // Get the file path from the first variable in this file
+            const firstVariable = variables[0];
+            const targetFilePath = firstVariable.filePath;
+
             fileItems.push(new VariableTreeItem(
                 displayName,
-                vscode.TreeItemCollapsibleState.Collapsed
+                vscode.TreeItemCollapsibleState.Collapsed,
+                undefined, // no specific variable, this is a file container
+                folderPath,
+                targetFilePath // pass the file path
             ));
         });
 

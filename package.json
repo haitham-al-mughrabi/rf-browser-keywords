@@ -158,6 +158,16 @@
         "command": "rfVariables.clearSearch",
         "title": "Clear Search",
         "icon": "$(clear-all)"
+      },
+      {
+        "command": "rfKeywords.openFile",
+        "title": "Open File",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "rfVariables.openFile",
+        "title": "Open File",
+        "icon": "$(go-to-file)"
       }
     ],
     "menus": {
@@ -196,6 +206,16 @@
           "command": "rfVariables.importFile",
           "when": "view == rfVariables && viewItem == variableFile",
           "group": "inline@1"
+        },
+        {
+          "command": "rfKeywords.openFile",
+          "when": "view == rfProjectKeywords && (viewItem == 'Python Library' || viewItem == 'Robot Keywords' || viewItem == 'Resource Keywords')",
+          "group": "inline@2"
+        },
+        {
+          "command": "rfVariables.openFile",
+          "when": "view == rfVariables && (viewItem == pythonVariableFile || viewItem == robotVariableFile || viewItem == resourceVariableFile)",
+          "group": "inline@2"
         }
       ],
       "view/title": [
