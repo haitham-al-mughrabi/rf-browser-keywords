@@ -147,6 +147,14 @@ export function activate(context: vscode.ExtensionContext) {
         }
     });
 
+    vscode.commands.registerCommand('rfVariables.showVariableDetails', async (item: VariableTreeItem) => {
+        if (item.variable) {
+            // Show variable documentation in the documentation view
+            await documentationProvider.showVariableDocumentation(item);
+            vscode.window.showInformationMessage(`Loaded: ${item.label} into documentation`);
+        }
+    });
+
     vscode.commands.registerCommand('rfVariables.refresh', async () => {
         vscode.window.showInformationMessage('Scanning workspace for variables...');
         await scanWorkspaceVariables();
@@ -2758,9 +2766,9 @@ class VariablesProvider implements vscode.TreeDataProvider<VariableTreeItem> {
             }
         }
 
-        // Check if this is a folder
-        if ((element as any).folderPath !== undefined) {
-            return Promise.resolve(this.getFilesInFolder((element as any).folderPath));
+        // Check if this is a folder (folders have folderPath but no filePath)
+        if (element.folderPath !== undefined && !element.filePath) {
+            return Promise.resolve(this.getFilesInFolder(element.folderPath));
         } else {
             // This is a file, return variables in this file
             return Promise.resolve(this.getVariablesForFile(element.label));
@@ -3391,6 +3399,189 @@ class DocumentationProvider implements vscode.TreeDataProvider<DocumentationTree
         const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
         await config.update('currentDocumentationKeyword', this.currentDocumentation, vscode.ConfigurationTarget.Global);
         this.refresh();
+    }
+
+    async showVariableDocumentation(variableItem: VariableTreeItem): Promise<void> {
+        this.currentDocumentation = await this.extractVariableDocumentation(variableItem);
+        const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
+        await config.update('currentDocumentationKeyword', this.currentDocumentation, vscode.ConfigurationTarget.Global);
+        this.refresh();
+    }
+
+    private async extractVariableDocumentation(variableItem: VariableTreeItem): Promise<any> {
+        const variable = variableItem.variable;
+
+        if (!variable) {
+            return {
+                name: variableItem.label,
+                library: 'Unknown',
+                documentation: 'Variable details not available',
+                arguments: [],
+                source: 'unknown',
+                filePath: '',
+                returnType: null,
+                tags: [],
+                type: 'Variable',
+                value: 'Unknown'
+            };
+        }
+
+        const documentation = {
+            name: variable.name || variableItem.label,
+            library: variable.fileName || 'Unknown File',
+            documentation: `Variable of type ${variable.type || 'Unknown'} from ${variable.source || 'unknown source'}`,
+            arguments: [],
+            source: variable.source || 'unknown',
+            filePath: variable.filePath || '',
+            returnType: variable.type || 'Unknown',
+            tags: [],
+            type: 'Variable',
+            value: variable.value || 'Unknown'
+        };
+
+        // Try to extract more documentation from source file if available
+        if (variable.filePath && fs.existsSync(variable.filePath)) {
+            try {
+                const fileDoc = await this.extractVariableDocumentationFromFile(variable.filePath, variable.name);
+                if (fileDoc && fileDoc.documentation) {
+                    documentation.documentation = fileDoc.documentation;
+                    documentation.value = fileDoc.value || documentation.value;
+                    documentation.type = fileDoc.type || documentation.returnType;
+                }
+            } catch (error) {
+                console.error('Error extracting variable documentation from file:', error);
+            }
+        }
+
+        return documentation;
+    }
+
+    private async extractVariableDocumentationFromFile(filePath: string, variableName: string): Promise<any> {
+        try {
+            const content = fs.readFileSync(filePath, 'utf-8');
+            const fileExtension = path.extname(filePath);
+
+            if (fileExtension === '.py') {
+                return this.extractPythonVariableDocumentation(content, variableName);
+            } else if (fileExtension === '.robot' || fileExtension === '.resource') {
+                return this.extractRobotVariableDocumentation(content, variableName);
+            }
+
+            return null;
+        } catch (error) {
+            console.error('Error reading file for variable documentation:', error);
+            return null;
+        }
+    }
+
+    private extractPythonVariableDocumentation(content: string, variableName: string): any {
+        const lines = content.split('\n');
+
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i].trim();
+
+            // Look for variable assignment
+            if (line.includes(`${variableName} =`)) {
+                let documentation = '';
+                let value = line.split('=')[1]?.trim() || 'Unknown';
+
+                // Check for comment on same line or lines above
+                if (line.includes('#')) {
+                    documentation = line.split('#')[1]?.trim() || '';
+                } else {
+                    // Look for comments in previous lines
+                    for (let j = i - 1; j >= Math.max(0, i - 3); j--) {
+                        const prevLine = lines[j].trim();
+                        if (prevLine.startsWith('#')) {
+                            documentation = prevLine.substring(1).trim() + (documentation ? ' ' + documentation : '');
+                        } else if (prevLine !== '') {
+                            break;
+                        }
+                    }
+                }
+
+                // Determine type from value
+                let type = 'String';
+                if (value.match(/^\d+$/)) {
+                    type = 'Integer';
+                } else if (value.match(/^\d*\.\d+$/)) {
+                    type = 'Float';
+                } else if (value.match(/^(True|False)$/)) {
+                    type = 'Boolean';
+                } else if (value.startsWith('[') && value.endsWith(']')) {
+                    type = 'List';
+                } else if (value.startsWith('{') && value.endsWith('}')) {
+                    type = 'Dictionary';
+                }
+
+                return {
+                    documentation: documentation || `Python variable: ${variableName}`,
+                    value: value,
+                    type: type
+                };
+            }
+        }
+
+        return null;
+    }
+
+    private extractRobotVariableDocumentation(content: string, variableName: string): any {
+        const lines = content.split('\n');
+        let inVariableSection = false;
+
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i].trim();
+
+            // Check for Variables section
+            if (line.match(/^\*+\s*(Variables?)\s*\**/i)) {
+                inVariableSection = true;
+                continue;
+            }
+
+            // Check for other sections
+            if (line.match(/^\*+\s*(Test Cases?|Keywords?|Settings?|Tasks?)\s*\**/i)) {
+                inVariableSection = false;
+                continue;
+            }
+
+            if (!inVariableSection || line === '' || line.startsWith('#')) {
+                continue;
+            }
+
+            // Look for variable definition
+            if (line.includes(variableName)) {
+                const parts = line.split(/\s{2,}/); // Split by multiple spaces
+                let documentation = '';
+                let value = 'Unknown';
+
+                if (parts.length > 1) {
+                    value = parts.slice(1).join(' ');
+                }
+
+                // Check for comment
+                if (line.includes('#')) {
+                    documentation = line.split('#')[1]?.trim() || '';
+                }
+
+                // Determine type from variable syntax
+                let type = 'Scalar';
+                if (variableName.startsWith('@{')) {
+                    type = 'List';
+                } else if (variableName.startsWith('&{')) {
+                    type = 'Dictionary';
+                } else if (variableName.startsWith('${')) {
+                    type = 'Scalar';
+                }
+
+                return {
+                    documentation: documentation || `Robot Framework variable: ${variableName}`,
+                    value: value,
+                    type: type
+                };
+            }
+        }
+
+        return null;
     }
 
     getCurrentDocumentation(): any {

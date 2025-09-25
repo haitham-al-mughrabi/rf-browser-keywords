@@ -168,6 +168,11 @@
         "command": "rfVariables.openFile",
         "title": "Open File",
         "icon": "$(go-to-file)"
+      },
+      {
+        "command": "rfVariables.showVariableDetails",
+        "title": "Show Variable Details",
+        "icon": "$(book)"
       }
     ],
     "menus": {
@@ -201,6 +206,11 @@
           "command": "rfVariables.copyVariable",
           "when": "view == rfVariables && viewItem == variable",
           "group": "inline@2"
+        },
+        {
+          "command": "rfVariables.showVariableDetails",
+          "when": "view == rfVariables && viewItem == variable",
+          "group": "inline@3"
         },
         {
           "command": "rfVariables.importFile",
