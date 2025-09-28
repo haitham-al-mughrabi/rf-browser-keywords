@@ -17,7 +17,11 @@
   "bugs": {
     "url": "https://github.com/haitham-al-mughrabi/rf-browser-keywords/issues"
   },
-  "icon": "images/icon.png",
+  "icon": "images/icon-256.png",
+  "galleryBanner": {
+    "color": "#1a1a1a",
+    "theme": "dark"
+  },
   "keywords": [
     "robot framework",
     "robotframework",
