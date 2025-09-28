@@ -2,7 +2,7 @@
   "name": "robot-framework-keywords",
   "displayName": "Robot Framework Keywords Explorer",
   "description": "Comprehensive Robot Framework extension with keyword explorer, auto-completion, documentation viewer, and project scanning capabilities",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "publisher": "Haitham-Al-Mughrabi",
   "author": {
     "name": "Haitham Al-Mughrabi",
@@ -17,7 +17,7 @@
   "bugs": {
     "url": "https://github.com/haitham-al-mughrabi/rf-browser-keywords/issues"
   },
-  "icon": "images/icon-256.png",
+  "icon": "images/marketplace-icon.png",
   "galleryBanner": {
     "color": "#1a1a1a",
     "theme": "dark"
