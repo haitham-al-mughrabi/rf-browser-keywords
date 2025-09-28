@@ -80,6 +80,11 @@
         "icon": "$(add)"
       },
       {
+        "command": "rfKeywords.insertKeywordWithDialog",
+        "title": "Insert Keyword with Parameters",
+        "icon": "$(edit)"
+      },
+      {
         "command": "rfKeywords.copyKeyword",
         "title": "Copy Keyword",
         "icon": "$(copy)"
@@ -171,6 +176,11 @@
           "command": "rfKeywords.insertKeyword",
           "when": "(view == rfProjectKeywords || view == rfOfficialKeywords) && viewItem == keyword",
           "group": "inline@1"
+        },
+        {
+          "command": "rfKeywords.insertKeywordWithDialog",
+          "when": "(view == rfProjectKeywords || view == rfOfficialKeywords) && viewItem == keyword",
+          "group": "inline@2"
         },
         {
           "command": "rfDocumentation.showKeywordDoc",

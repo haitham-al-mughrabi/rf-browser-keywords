@@ -43,6 +43,45 @@ export function activate(context: vscode.ExtensionContext) {
         }
     });
 
+    vscode.commands.registerCommand('rfKeywords.insertKeywordWithDialog', async (item: KeywordTreeItem) => {
+        if (item.implementation) {
+            const editor = vscode.window.activeTextEditor;
+            if (editor) {
+                const position = editor.selection.active;
+
+                // Extract parameters from the keyword
+                const parameters = extractKeywordParameters(item.implementation);
+
+                if (!parameters || parameters.length === 0) {
+                    // No parameters, just insert the keyword directly
+                    const keywordCall = item.label || 'Unknown Keyword';
+                    editor.edit(editBuilder => {
+                        editBuilder.insert(position, keywordCall + '\n');
+                    });
+                    vscode.window.showInformationMessage(`Inserted: ${item.label}`);
+                    return;
+                }
+
+                // Show parameter input dialog
+                const parameterValues = await showParameterInputDialog(item.label || 'Unknown Keyword', parameters);
+
+                if (parameterValues !== null) {
+                    // Generate keyword call with user-provided values
+                    const robotKeywordCall = generateRobotFrameworkKeywordCallWithValues(
+                        item.label || 'Unknown Keyword',
+                        parameters,
+                        parameterValues
+                    );
+                    const keywordWithNewline = robotKeywordCall + '\n';
+                    editor.edit(editBuilder => {
+                        editBuilder.insert(position, keywordWithNewline);
+                    });
+                    vscode.window.showInformationMessage(`Inserted: ${item.label} with custom parameters`);
+                }
+            }
+        }
+    });
+
     vscode.commands.registerCommand('rfKeywords.copyKeyword', (item: KeywordTreeItem) => {
         if (item.implementation) {
             // Generate Robot Framework format
@@ -3583,6 +3622,60 @@ function generateRobotFrameworkKeywordCall(keywordName: string, implementation: 
 
         const argumentLine = `    ...    ${param.name}=${placeholder}${comment}`;
         argumentLines.push(argumentLine);
+    }
+
+    if (argumentLines.length > 0) {
+        keywordCall += '\n' + argumentLines.join('\n');
+    }
+
+    return keywordCall;
+}
+
+async function showParameterInputDialog(keywordName: string, parameters: any[]): Promise<{[key: string]: string} | null> {
+    const parameterValues: {[key: string]: string} = {};
+
+    for (const param of parameters) {
+        const defaultValue = param.originalDefault || param.default || '';
+        const promptMessage = `Parameter: ${param.name}${defaultValue ? ` (default: ${defaultValue})` : ''}`;
+
+        const userInput = await vscode.window.showInputBox({
+            prompt: promptMessage,
+            value: defaultValue,
+            placeHolder: defaultValue || `Enter value for ${param.name}`,
+            ignoreFocusOut: true
+        });
+
+        if (userInput === undefined) {
+            // User cancelled the dialog
+            return null;
+        }
+
+        parameterValues[param.name] = userInput;
+    }
+
+    return parameterValues;
+}
+
+function generateRobotFrameworkKeywordCallWithValues(
+    keywordName: string,
+    parameters: any[],
+    parameterValues: {[key: string]: string}
+): string {
+    if (!parameters || parameters.length === 0) {
+        return keywordName;
+    }
+
+    let keywordCall = keywordName;
+    const argumentLines: string[] = [];
+
+    for (const param of parameters) {
+        const value = parameterValues[param.name] || '';
+
+        if (value.trim() !== '') {
+            // Only include parameters that have values
+            const argumentLine = `    ...    ${param.name}=${value}`;
+            argumentLines.push(argumentLine);
+        }
     }
 
     if (argumentLines.length > 0) {

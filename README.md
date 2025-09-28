@@ -8,7 +8,7 @@
 [![Visual Studio Marketplace Downloads](https://img.shields.io/visual-studio-marketplace/d/Haitham-Al-Mughrabi.robot-framework-keywords)](https://marketplace.visualstudio.com/items?itemName=Haitham-Al-Mughrabi.robot-framework-keywords)
 [![Visual Studio Marketplace Rating](https://img.shields.io/visual-studio-marketplace/r/Haitham-Al-Mughrabi.robot-framework-keywords)](https://marketplace.visualstudio.com/items?itemName=Haitham-Al-Mughrabi.robot-framework-keywords)
 
-A comprehensive VS Code extension that supercharges your Robot Framework development with intelligent keyword management, auto-completion, documentation viewing, and project scanning capabilities.
+A comprehensive VS Code extension that supercharges your Robot Framework development with intelligent keyword and variables management, documentation viewing, and project scanning capabilities.
 
 ## 🚀 Features
 
