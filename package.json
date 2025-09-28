@@ -100,6 +100,11 @@
         "icon": "$(arrow-down)"
       },
       {
+        "command": "rfKeywords.importOfficialLibrary",
+        "title": "Import Official Library",
+        "icon": "$(arrow-down)"
+      },
+      {
         "command": "rfVariables.insertVariable",
         "title": "Insert Variable",
         "icon": "$(add)"
@@ -195,6 +200,11 @@
         {
           "command": "rfKeywords.importFile",
           "when": "view == rfProjectKeywords && (viewItem == 'Python Library' || viewItem == 'Resource Keywords' || viewItem == 'Robot Keywords')",
+          "group": "inline@1"
+        },
+        {
+          "command": "rfKeywords.importOfficialLibrary",
+          "when": "view == rfOfficialKeywords && (viewItem == 'Browser Library' || viewItem == 'BuiltIn Library' || viewItem == 'Collections Library' || viewItem == 'String Library' || viewItem == 'DateTime Library' || viewItem == 'OperatingSystem Library' || viewItem == 'Process Library' || viewItem == 'XML Library' || viewItem == 'SeleniumLibrary' || viewItem == 'RequestsLibrary')",
           "group": "inline@1"
         },
         {

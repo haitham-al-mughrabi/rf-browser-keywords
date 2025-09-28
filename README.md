@@ -22,7 +22,6 @@ A comprehensive VS Code extension that supercharges your Robot Framework develop
 - **Built-in Keywords**: Access to Robot Framework standard library keywords
 - **Browser Library**: Comprehensive Browser library keyword support
 - **SeleniumLibrary**: Full SeleniumLibrary keyword collection
-- **Custom Libraries**: Support for custom library keywords
 
 ### 📋 **Variables Management**
 - **Variable Discovery**: Automatically finds variables from Python and Robot files

@@ -121,6 +121,10 @@ export function activate(context: vscode.ExtensionContext) {
         await importLibraryOrResource(item);
     });
 
+    vscode.commands.registerCommand('rfKeywords.importOfficialLibrary', async (item: KeywordTreeItem) => {
+        await importOfficialLibrary(item);
+    });
+
     vscode.commands.registerCommand('rfKeywords.openFile', async (item: KeywordTreeItem) => {
         if (item.filePath && fs.existsSync(item.filePath)) {
             const document = await vscode.workspace.openTextDocument(item.filePath);
@@ -404,6 +408,70 @@ async function importVariableFile(item: VariableTreeItem): Promise<void> {
 
     // Check if import already exists
     const existingImport = checkExistingImport(editor, importType, relativeTargetPath);
+    if (existingImport.exists) {
+        const action = await vscode.window.showWarningMessage(
+            `Import already exists at line ${existingImport.line}: "${existingImport.statement}"`,
+            'Show Line', 'OK'
+        );
+
+        if (action === 'Show Line') {
+            // Navigate to the existing import line
+            const position = new vscode.Position(existingImport.line! - 1, 0);
+            editor.selection = new vscode.Selection(position, position);
+            editor.revealRange(new vscode.Range(position, position), vscode.TextEditorRevealType.InCenter);
+        }
+        return;
+    }
+
+    // Insert the import statement in the Settings section
+    await insertImportStatement(editor, importStatement);
+
+    vscode.window.showInformationMessage(`Imported: ${importStatement}`);
+}
+
+function getOfficialLibraryImportName(displayName: string): string {
+    // Map display names to correct import names based on Robot Framework documentation
+    const libraryMapping: { [key: string]: string } = {
+        'Browser Library': 'Browser',
+        'BuiltIn Library': 'BuiltIn',  // Note: BuiltIn is automatically imported and doesn't need explicit import
+        'Collections Library': 'Collections',
+        'String Library': 'String',
+        'DateTime Library': 'DateTime',
+        'OperatingSystem Library': 'OperatingSystem',
+        'Process Library': 'Process',
+        'XML Library': 'XML',
+        'RequestsLibrary': 'RequestsLibrary',
+        'SeleniumLibrary': 'SeleniumLibrary'
+    };
+
+    return libraryMapping[displayName] || displayName;
+}
+
+async function importOfficialLibrary(item: KeywordTreeItem): Promise<void> {
+    if (!item.library) {
+        vscode.window.showErrorMessage('No library information available for import');
+        return;
+    }
+
+    const editor = vscode.window.activeTextEditor;
+    if (!editor) {
+        vscode.window.showErrorMessage('No active Robot Framework file to import into');
+        return;
+    }
+
+    // Get correct import name for the library
+    const correctLibraryName = getOfficialLibraryImportName(item.library);
+
+    // Special handling for BuiltIn library
+    if (correctLibraryName === 'BuiltIn') {
+        vscode.window.showInformationMessage('BuiltIn library is automatically imported and does not need explicit import');
+        return;
+    }
+
+    const importStatement = `Library    ${correctLibraryName}`;
+
+    // Check if import already exists
+    const existingImport = checkExistingImport(editor, 'Library', correctLibraryName);
     if (existingImport.exists) {
         const action = await vscode.window.showWarningMessage(
             `Import already exists at line ${existingImport.line}: "${existingImport.statement}"`,
@@ -1768,18 +1836,40 @@ function getAllOfficialKeywords(): Array<{name: string, library: string, impleme
 
     // BuiltIn Library keywords
     const builtinKeywords = [
-        { name: 'Log', library: 'BuiltIn Library', implementation: 'Log    ${message}' },
+        { name: 'Log', library: 'BuiltIn Library', implementation: 'Log    ${message}    level=INFO' },
+        { name: 'Log To Console', library: 'BuiltIn Library', implementation: 'Log To Console    ${message}' },
         { name: 'Set Variable', library: 'BuiltIn Library', implementation: 'Set Variable    ${value}' },
+        { name: 'Set Global Variable', library: 'BuiltIn Library', implementation: 'Set Global Variable    ${name}    ${value}' },
         { name: 'Should Be Equal', library: 'BuiltIn Library', implementation: 'Should Be Equal    ${first}    ${second}' },
+        { name: 'Should Not Be Equal', library: 'BuiltIn Library', implementation: 'Should Not Be Equal    ${first}    ${second}' },
         { name: 'Should Contain', library: 'BuiltIn Library', implementation: 'Should Contain    ${container}    ${item}' },
+        { name: 'Should Not Contain', library: 'BuiltIn Library', implementation: 'Should Not Contain    ${container}    ${item}' },
+        { name: 'Should Be True', library: 'BuiltIn Library', implementation: 'Should Be True    ${condition}' },
+        { name: 'Should Be False', library: 'BuiltIn Library', implementation: 'Should Be False    ${condition}' },
+        { name: 'Length Should Be', library: 'BuiltIn Library', implementation: 'Length Should Be    ${item}    ${length}' },
+        { name: 'Should Be Empty', library: 'BuiltIn Library', implementation: 'Should Be Empty    ${item}' },
+        { name: 'Should Not Be Empty', library: 'BuiltIn Library', implementation: 'Should Not Be Empty    ${item}' },
+        { name: 'Convert To String', library: 'BuiltIn Library', implementation: 'Convert To String    ${item}' },
+        { name: 'Convert To Integer', library: 'BuiltIn Library', implementation: 'Convert To Integer    ${item}' },
+        { name: 'Convert To Number', library: 'BuiltIn Library', implementation: 'Convert To Number    ${item}' },
+        { name: 'Create List', library: 'BuiltIn Library', implementation: 'Create List    ${item1}    ${item2}' },
+        { name: 'Create Dictionary', library: 'BuiltIn Library', implementation: 'Create Dictionary    ${key1}=${value1}' },
+        { name: 'Get Length', library: 'BuiltIn Library', implementation: 'Get Length    ${item}' },
+        { name: 'Run Keyword', library: 'BuiltIn Library', implementation: 'Run Keyword    ${keyword}' },
+        { name: 'Run Keyword If', library: 'BuiltIn Library', implementation: 'Run Keyword If    ${condition}    ${keyword}' },
+        { name: 'Run Keyword Unless', library: 'BuiltIn Library', implementation: 'Run Keyword Unless    ${condition}    ${keyword}' },
+        { name: 'Run Keyword And Return Status', library: 'BuiltIn Library', implementation: 'Run Keyword And Return Status    ${keyword}' },
+        { name: 'Run Keyword And Ignore Error', library: 'BuiltIn Library', implementation: 'Run Keyword And Ignore Error    ${keyword}' },
+        { name: 'Wait Until Keyword Succeeds', library: 'BuiltIn Library', implementation: 'Wait Until Keyword Succeeds    ${retry}    ${retry_interval}    ${keyword}' },
         { name: 'Sleep', library: 'BuiltIn Library', implementation: 'Sleep    ${time}' },
         { name: 'Fail', library: 'BuiltIn Library', implementation: 'Fail    ${message}' },
         { name: 'Pass Execution', library: 'BuiltIn Library', implementation: 'Pass Execution    ${message}' },
-        { name: 'Run Keyword If', library: 'BuiltIn Library', implementation: 'Run Keyword If    ${condition}    ${keyword}' },
-        { name: 'Should Be True', library: 'BuiltIn Library', implementation: 'Should Be True    ${condition}' },
-        { name: 'Should Not Be Equal', library: 'BuiltIn Library', implementation: 'Should Not Be Equal    ${first}    ${second}' },
-        { name: 'Length Should Be', library: 'BuiltIn Library', implementation: 'Length Should Be    ${item}    ${length}' },
-        { name: 'Create List', library: 'BuiltIn Library', implementation: 'Create List    ${item1}    ${item2}' }
+        { name: 'Skip', library: 'BuiltIn Library', implementation: 'Skip    ${message}' },
+        { name: 'Evaluate', library: 'BuiltIn Library', implementation: 'Evaluate    ${expression}' },
+        { name: 'Catenate', library: 'BuiltIn Library', implementation: 'Catenate    ${string1}    ${string2}' },
+        { name: 'Get Time', library: 'BuiltIn Library', implementation: 'Get Time    format=timestamp' },
+        { name: 'Comment', library: 'BuiltIn Library', implementation: 'Comment    ${message}' },
+        { name: 'No Operation', library: 'BuiltIn Library', implementation: 'No Operation' }
     ];
 
     // Collections Library keywords
@@ -1798,7 +1888,95 @@ function getAllOfficialKeywords(): Array<{name: string, library: string, impleme
         { name: 'Replace String', library: 'String Library', implementation: 'Replace String    ${string}    ${search}    ${replace}' }
     ];
 
-    keywords.push(...browserKeywords, ...builtinKeywords, ...collectionsKeywords, ...stringKeywords);
+    // SeleniumLibrary keywords
+    const seleniumKeywords = [
+        { name: 'Open Browser', library: 'SeleniumLibrary', implementation: 'Open Browser    ${url}    ${browser}=chrome' },
+        { name: 'Close Browser', library: 'SeleniumLibrary', implementation: 'Close Browser' },
+        { name: 'Close All Browsers', library: 'SeleniumLibrary', implementation: 'Close All Browsers' },
+        { name: 'Switch Browser', library: 'SeleniumLibrary', implementation: 'Switch Browser    ${index_or_alias}' },
+        { name: 'Go To', library: 'SeleniumLibrary', implementation: 'Go To    ${url}' },
+        { name: 'Go Back', library: 'SeleniumLibrary', implementation: 'Go Back' },
+        { name: 'Go Forward', library: 'SeleniumLibrary', implementation: 'Go Forward' },
+        { name: 'Reload Page', library: 'SeleniumLibrary', implementation: 'Reload Page' },
+        { name: 'Get Location', library: 'SeleniumLibrary', implementation: 'Get Location' },
+        { name: 'Get Title', library: 'SeleniumLibrary', implementation: 'Get Title' },
+        { name: 'Title Should Be', library: 'SeleniumLibrary', implementation: 'Title Should Be    ${title}' },
+        { name: 'Location Should Be', library: 'SeleniumLibrary', implementation: 'Location Should Be    ${url}' },
+        { name: 'Click Element', library: 'SeleniumLibrary', implementation: 'Click Element    ${locator}' },
+        { name: 'Click Button', library: 'SeleniumLibrary', implementation: 'Click Button    ${locator}' },
+        { name: 'Click Link', library: 'SeleniumLibrary', implementation: 'Click Link    ${locator}' },
+        { name: 'Double Click Element', library: 'SeleniumLibrary', implementation: 'Double Click Element    ${locator}' },
+        { name: 'Right Click Element', library: 'SeleniumLibrary', implementation: 'Right Click Element    ${locator}' },
+        { name: 'Input Text', library: 'SeleniumLibrary', implementation: 'Input Text    ${locator}    ${text}' },
+        { name: 'Input Password', library: 'SeleniumLibrary', implementation: 'Input Password    ${locator}    ${password}' },
+        { name: 'Clear Element Text', library: 'SeleniumLibrary', implementation: 'Clear Element Text    ${locator}' },
+        { name: 'Press Key', library: 'SeleniumLibrary', implementation: 'Press Key    ${locator}    ${key}' },
+        { name: 'Press Keys', library: 'SeleniumLibrary', implementation: 'Press Keys    ${locator}    ${keys}' },
+        { name: 'Submit Form', library: 'SeleniumLibrary', implementation: 'Submit Form    ${locator}' },
+        { name: 'Select From List By Index', library: 'SeleniumLibrary', implementation: 'Select From List By Index    ${locator}    ${index}' },
+        { name: 'Select From List By Label', library: 'SeleniumLibrary', implementation: 'Select From List By Label    ${locator}    ${label}' },
+        { name: 'Select From List By Value', library: 'SeleniumLibrary', implementation: 'Select From List By Value    ${locator}    ${value}' },
+        { name: 'Select Checkbox', library: 'SeleniumLibrary', implementation: 'Select Checkbox    ${locator}' },
+        { name: 'Unselect Checkbox', library: 'SeleniumLibrary', implementation: 'Unselect Checkbox    ${locator}' },
+        { name: 'Select Radio Button', library: 'SeleniumLibrary', implementation: 'Select Radio Button    ${group_name}    ${value}' },
+        { name: 'Wait Until Element Is Visible', library: 'SeleniumLibrary', implementation: 'Wait Until Element Is Visible    ${locator}    timeout=5s' },
+        { name: 'Wait Until Element Is Not Visible', library: 'SeleniumLibrary', implementation: 'Wait Until Element Is Not Visible    ${locator}    timeout=5s' },
+        { name: 'Wait Until Element Is Enabled', library: 'SeleniumLibrary', implementation: 'Wait Until Element Is Enabled    ${locator}    timeout=5s' },
+        { name: 'Wait Until Page Contains', library: 'SeleniumLibrary', implementation: 'Wait Until Page Contains    ${text}    timeout=5s' },
+        { name: 'Wait Until Page Contains Element', library: 'SeleniumLibrary', implementation: 'Wait Until Page Contains Element    ${locator}    timeout=5s' },
+        { name: 'Get Text', library: 'SeleniumLibrary', implementation: 'Get Text    ${locator}' },
+        { name: 'Get Value', library: 'SeleniumLibrary', implementation: 'Get Value    ${locator}' },
+        { name: 'Get Element Attribute', library: 'SeleniumLibrary', implementation: 'Get Element Attribute    ${locator}    ${attribute}' },
+        { name: 'Get Element Count', library: 'SeleniumLibrary', implementation: 'Get Element Count    ${locator}' },
+        { name: 'Element Should Be Visible', library: 'SeleniumLibrary', implementation: 'Element Should Be Visible    ${locator}' },
+        { name: 'Element Should Not Be Visible', library: 'SeleniumLibrary', implementation: 'Element Should Not Be Visible    ${locator}' },
+        { name: 'Element Should Be Enabled', library: 'SeleniumLibrary', implementation: 'Element Should Be Enabled    ${locator}' },
+        { name: 'Element Should Be Disabled', library: 'SeleniumLibrary', implementation: 'Element Should Be Disabled    ${locator}' },
+        { name: 'Element Should Contain', library: 'SeleniumLibrary', implementation: 'Element Should Contain    ${locator}    ${expected}' },
+        { name: 'Element Text Should Be', library: 'SeleniumLibrary', implementation: 'Element Text Should Be    ${locator}    ${expected}' },
+        { name: 'Page Should Contain', library: 'SeleniumLibrary', implementation: 'Page Should Contain    ${text}' },
+        { name: 'Page Should Not Contain', library: 'SeleniumLibrary', implementation: 'Page Should Not Contain    ${text}' },
+        { name: 'Page Should Contain Element', library: 'SeleniumLibrary', implementation: 'Page Should Contain Element    ${locator}' },
+        { name: 'Page Should Not Contain Element', library: 'SeleniumLibrary', implementation: 'Page Should Not Contain Element    ${locator}' },
+        { name: 'Page Should Contain Link', library: 'SeleniumLibrary', implementation: 'Page Should Contain Link    ${text}' },
+        { name: 'Page Should Contain Button', library: 'SeleniumLibrary', implementation: 'Page Should Contain Button    ${text}' },
+        { name: 'Select Window', library: 'SeleniumLibrary', implementation: 'Select Window    ${locator}' },
+        { name: 'Close Window', library: 'SeleniumLibrary', implementation: 'Close Window' },
+        { name: 'Get Window Handles', library: 'SeleniumLibrary', implementation: 'Get Window Handles' },
+        { name: 'Get Window Size', library: 'SeleniumLibrary', implementation: 'Get Window Size' },
+        { name: 'Set Window Size', library: 'SeleniumLibrary', implementation: 'Set Window Size    ${width}    ${height}' },
+        { name: 'Maximize Browser Window', library: 'SeleniumLibrary', implementation: 'Maximize Browser Window' },
+        { name: 'Select Frame', library: 'SeleniumLibrary', implementation: 'Select Frame    ${locator}' },
+        { name: 'Unselect Frame', library: 'SeleniumLibrary', implementation: 'Unselect Frame' },
+        { name: 'Alert Should Be Present', library: 'SeleniumLibrary', implementation: 'Alert Should Be Present    ${text}=' },
+        { name: 'Handle Alert', library: 'SeleniumLibrary', implementation: 'Handle Alert    action=ACCEPT' },
+        { name: 'Input Text Into Alert', library: 'SeleniumLibrary', implementation: 'Input Text Into Alert    ${text}' },
+        { name: 'Dismiss Alert', library: 'SeleniumLibrary', implementation: 'Dismiss Alert' },
+        { name: 'Get Alert Message', library: 'SeleniumLibrary', implementation: 'Get Alert Message' },
+        { name: 'Capture Page Screenshot', library: 'SeleniumLibrary', implementation: 'Capture Page Screenshot    ${filename}=' },
+        { name: 'Capture Element Screenshot', library: 'SeleniumLibrary', implementation: 'Capture Element Screenshot    ${locator}    ${filename}=' },
+        { name: 'Set Screenshot Directory', library: 'SeleniumLibrary', implementation: 'Set Screenshot Directory    ${path}' },
+        { name: 'Log Source', library: 'SeleniumLibrary', implementation: 'Log Source    loglevel=INFO' },
+        { name: 'Get Cookies', library: 'SeleniumLibrary', implementation: 'Get Cookies' },
+        { name: 'Add Cookie', library: 'SeleniumLibrary', implementation: 'Add Cookie    ${name}    ${value}' },
+        { name: 'Delete Cookie', library: 'SeleniumLibrary', implementation: 'Delete Cookie    ${name}' },
+        { name: 'Delete All Cookies', library: 'SeleniumLibrary', implementation: 'Delete All Cookies' },
+        { name: 'Set Selenium Speed', library: 'SeleniumLibrary', implementation: 'Set Selenium Speed    ${value}' },
+        { name: 'Set Selenium Timeout', library: 'SeleniumLibrary', implementation: 'Set Selenium Timeout    ${value}' },
+        { name: 'Execute Javascript', library: 'SeleniumLibrary', implementation: 'Execute Javascript    ${code}' }
+    ];
+
+    // RequestsLibrary keywords
+    const requestsKeywords = [
+        { name: 'Create Session', library: 'RequestsLibrary', implementation: 'Create Session    ${alias}    ${url}' },
+        { name: 'GET On Session', library: 'RequestsLibrary', implementation: 'GET On Session    ${alias}    ${url}' },
+        { name: 'POST On Session', library: 'RequestsLibrary', implementation: 'POST On Session    ${alias}    ${url}    ${data}' },
+        { name: 'PUT On Session', library: 'RequestsLibrary', implementation: 'PUT On Session    ${alias}    ${url}    ${data}' },
+        { name: 'DELETE On Session', library: 'RequestsLibrary', implementation: 'DELETE On Session    ${alias}    ${url}' },
+        { name: 'Status Should Be', library: 'RequestsLibrary', implementation: 'Status Should Be    ${expected_status}    ${response}' }
+    ];
+
+    keywords.push(...browserKeywords, ...builtinKeywords, ...collectionsKeywords, ...stringKeywords, ...seleniumKeywords, ...requestsKeywords);
     return keywords;
 }
 
@@ -1862,6 +2040,10 @@ class RobotFrameworkKeywordProvider implements vscode.TreeDataProvider<KeywordTr
                 return Promise.resolve(this.getProcessKeywords());
             case 'XML Library':
                 return Promise.resolve(this.getXMLKeywords());
+            case 'SeleniumLibrary':
+                return Promise.resolve(this.getSeleniumKeywords());
+            case 'RequestsLibrary':
+                return Promise.resolve(this.getRequestsKeywords());
 
             // Browser subcategories
             case 'Browser Management':
@@ -1975,14 +2157,16 @@ class RobotFrameworkKeywordProvider implements vscode.TreeDataProvider<KeywordTr
 
     private getOfficialKeywordCategories(): KeywordTreeItem[] {
         return [
-            new KeywordTreeItem('Browser Library', vscode.TreeItemCollapsibleState.Expanded),
-            new KeywordTreeItem('BuiltIn Library', vscode.TreeItemCollapsibleState.Collapsed),
-            new KeywordTreeItem('Collections Library', vscode.TreeItemCollapsibleState.Collapsed),
-            new KeywordTreeItem('String Library', vscode.TreeItemCollapsibleState.Collapsed),
-            new KeywordTreeItem('DateTime Library', vscode.TreeItemCollapsibleState.Collapsed),
-            new KeywordTreeItem('OperatingSystem Library', vscode.TreeItemCollapsibleState.Collapsed),
-            new KeywordTreeItem('Process Library', vscode.TreeItemCollapsibleState.Collapsed),
-            new KeywordTreeItem('XML Library', vscode.TreeItemCollapsibleState.Collapsed)
+            new KeywordTreeItem('Browser Library', vscode.TreeItemCollapsibleState.Expanded, undefined, 'Browser Library'),
+            new KeywordTreeItem('BuiltIn Library', vscode.TreeItemCollapsibleState.Collapsed, undefined, 'BuiltIn Library'),
+            new KeywordTreeItem('Collections Library', vscode.TreeItemCollapsibleState.Collapsed, undefined, 'Collections Library'),
+            new KeywordTreeItem('String Library', vscode.TreeItemCollapsibleState.Collapsed, undefined, 'String Library'),
+            new KeywordTreeItem('DateTime Library', vscode.TreeItemCollapsibleState.Collapsed, undefined, 'DateTime Library'),
+            new KeywordTreeItem('OperatingSystem Library', vscode.TreeItemCollapsibleState.Collapsed, undefined, 'OperatingSystem Library'),
+            new KeywordTreeItem('Process Library', vscode.TreeItemCollapsibleState.Collapsed, undefined, 'Process Library'),
+            new KeywordTreeItem('XML Library', vscode.TreeItemCollapsibleState.Collapsed, undefined, 'XML Library'),
+            new KeywordTreeItem('SeleniumLibrary', vscode.TreeItemCollapsibleState.Collapsed, undefined, 'SeleniumLibrary'),
+            new KeywordTreeItem('RequestsLibrary', vscode.TreeItemCollapsibleState.Collapsed, undefined, 'RequestsLibrary')
         ];
     }
 
@@ -2505,23 +2689,117 @@ class RobotFrameworkKeywordProvider implements vscode.TreeDataProvider<KeywordTr
 
     private getBuiltInKeywords(): KeywordTreeItem[] {
         return [
-            new KeywordTreeItem('Log', vscode.TreeItemCollapsibleState.None, 'Log    ${message}', 'BuiltIn'),
-            new KeywordTreeItem('Log To Console', vscode.TreeItemCollapsibleState.None, 'Log To Console    ${message}', 'BuiltIn'),
+            // Logging
+            new KeywordTreeItem('Log', vscode.TreeItemCollapsibleState.None, 'Log    ${message}    level=INFO', 'BuiltIn'),
+            new KeywordTreeItem('Log To Console', vscode.TreeItemCollapsibleState.None, 'Log To Console    ${message}    stream=STDOUT', 'BuiltIn'),
+            new KeywordTreeItem('Log Many', vscode.TreeItemCollapsibleState.None, 'Log Many    ${item1}    ${item2}', 'BuiltIn'),
+            new KeywordTreeItem('Log Variables', vscode.TreeItemCollapsibleState.None, 'Log Variables    level=INFO', 'BuiltIn'),
+
+            // Variables and Data Types
             new KeywordTreeItem('Set Variable', vscode.TreeItemCollapsibleState.None, 'Set Variable    ${value}', 'BuiltIn'),
-            new KeywordTreeItem('Should Be Equal', vscode.TreeItemCollapsibleState.None, 'Should Be Equal    ${first}    ${second}', 'BuiltIn'),
-            new KeywordTreeItem('Should Contain', vscode.TreeItemCollapsibleState.None, 'Should Contain    ${container}    ${item}', 'BuiltIn'),
-            new KeywordTreeItem('Should Not Be Empty', vscode.TreeItemCollapsibleState.None, 'Should Not Be Empty    ${item}', 'BuiltIn'),
-            new KeywordTreeItem('Length Should Be', vscode.TreeItemCollapsibleState.None, 'Length Should Be    ${item}    ${length}', 'BuiltIn'),
-            new KeywordTreeItem('Run Keyword If', vscode.TreeItemCollapsibleState.None, 'Run Keyword If    ${condition}    ${keyword}', 'BuiltIn'),
-            new KeywordTreeItem('Run Keyword And Return Status', vscode.TreeItemCollapsibleState.None, 'Run Keyword And Return Status    ${keyword}', 'BuiltIn'),
-            new KeywordTreeItem('Sleep', vscode.TreeItemCollapsibleState.None, 'Sleep    ${time}', 'BuiltIn'),
-            new KeywordTreeItem('Wait Until Keyword Succeeds', vscode.TreeItemCollapsibleState.None, 'Wait Until Keyword Succeeds    ${retry}    ${retry_interval}    ${keyword}', 'BuiltIn'),
+            new KeywordTreeItem('Set Global Variable', vscode.TreeItemCollapsibleState.None, 'Set Global Variable    ${name}    ${value}', 'BuiltIn'),
+            new KeywordTreeItem('Set Suite Variable', vscode.TreeItemCollapsibleState.None, 'Set Suite Variable    ${name}    ${value}', 'BuiltIn'),
+            new KeywordTreeItem('Set Test Variable', vscode.TreeItemCollapsibleState.None, 'Set Test Variable    ${name}    ${value}', 'BuiltIn'),
+            new KeywordTreeItem('Variable Should Exist', vscode.TreeItemCollapsibleState.None, 'Variable Should Exist    ${name}', 'BuiltIn'),
+            new KeywordTreeItem('Variable Should Not Exist', vscode.TreeItemCollapsibleState.None, 'Variable Should Not Exist    ${name}', 'BuiltIn'),
+            new KeywordTreeItem('Get Variable Value', vscode.TreeItemCollapsibleState.None, 'Get Variable Value    ${name}    ${default}=', 'BuiltIn'),
+            new KeywordTreeItem('Get Variables', vscode.TreeItemCollapsibleState.None, 'Get Variables    no_decoration=False', 'BuiltIn'),
+
+            // Data Conversion
             new KeywordTreeItem('Convert To String', vscode.TreeItemCollapsibleState.None, 'Convert To String    ${item}', 'BuiltIn'),
-            new KeywordTreeItem('Convert To Integer', vscode.TreeItemCollapsibleState.None, 'Convert To Integer    ${item}', 'BuiltIn'),
+            new KeywordTreeItem('Convert To Integer', vscode.TreeItemCollapsibleState.None, 'Convert To Integer    ${item}    base=', 'BuiltIn'),
+            new KeywordTreeItem('Convert To Number', vscode.TreeItemCollapsibleState.None, 'Convert To Number    ${item}    precision=', 'BuiltIn'),
+            new KeywordTreeItem('Convert To Boolean', vscode.TreeItemCollapsibleState.None, 'Convert To Boolean    ${item}', 'BuiltIn'),
+            new KeywordTreeItem('Convert To Hex', vscode.TreeItemCollapsibleState.None, 'Convert To Hex    ${number}    base=', 'BuiltIn'),
+            new KeywordTreeItem('Convert To Binary', vscode.TreeItemCollapsibleState.None, 'Convert To Binary    ${number}    base=', 'BuiltIn'),
+            new KeywordTreeItem('Convert To Octal', vscode.TreeItemCollapsibleState.None, 'Convert To Octal    ${number}    base=', 'BuiltIn'),
+
+            // Collections
             new KeywordTreeItem('Create List', vscode.TreeItemCollapsibleState.None, 'Create List    ${item1}    ${item2}', 'BuiltIn'),
             new KeywordTreeItem('Create Dictionary', vscode.TreeItemCollapsibleState.None, 'Create Dictionary    ${key1}=${value1}    ${key2}=${value2}', 'BuiltIn'),
-            new KeywordTreeItem('Fail', vscode.TreeItemCollapsibleState.None, 'Fail    ${message}', 'BuiltIn'),
-            new KeywordTreeItem('Pass Execution', vscode.TreeItemCollapsibleState.None, 'Pass Execution    ${message}', 'BuiltIn')
+            new KeywordTreeItem('Get Length', vscode.TreeItemCollapsibleState.None, 'Get Length    ${item}', 'BuiltIn'),
+            new KeywordTreeItem('Length Should Be', vscode.TreeItemCollapsibleState.None, 'Length Should Be    ${item}    ${length}', 'BuiltIn'),
+            new KeywordTreeItem('Should Be Empty', vscode.TreeItemCollapsibleState.None, 'Should Be Empty    ${item}', 'BuiltIn'),
+            new KeywordTreeItem('Should Not Be Empty', vscode.TreeItemCollapsibleState.None, 'Should Not Be Empty    ${item}', 'BuiltIn'),
+            new KeywordTreeItem('Get Count', vscode.TreeItemCollapsibleState.None, 'Get Count    ${container}    ${item}', 'BuiltIn'),
+            new KeywordTreeItem('Count Values In List', vscode.TreeItemCollapsibleState.None, 'Count Values In List    ${list}    ${value}', 'BuiltIn'),
+
+            // Verification Keywords
+            new KeywordTreeItem('Should Be Equal', vscode.TreeItemCollapsibleState.None, 'Should Be Equal    ${first}    ${second}    msg=', 'BuiltIn'),
+            new KeywordTreeItem('Should Not Be Equal', vscode.TreeItemCollapsibleState.None, 'Should Not Be Equal    ${first}    ${second}    msg=', 'BuiltIn'),
+            new KeywordTreeItem('Should Be Equal As Integers', vscode.TreeItemCollapsibleState.None, 'Should Be Equal As Integers    ${first}    ${second}    msg=', 'BuiltIn'),
+            new KeywordTreeItem('Should Be Equal As Numbers', vscode.TreeItemCollapsibleState.None, 'Should Be Equal As Numbers    ${first}    ${second}    precision=6', 'BuiltIn'),
+            new KeywordTreeItem('Should Be Equal As Strings', vscode.TreeItemCollapsibleState.None, 'Should Be Equal As Strings    ${first}    ${second}    msg=', 'BuiltIn'),
+            new KeywordTreeItem('Should Contain', vscode.TreeItemCollapsibleState.None, 'Should Contain    ${container}    ${item}    msg=', 'BuiltIn'),
+            new KeywordTreeItem('Should Not Contain', vscode.TreeItemCollapsibleState.None, 'Should Not Contain    ${container}    ${item}    msg=', 'BuiltIn'),
+            new KeywordTreeItem('Should Contain X Times', vscode.TreeItemCollapsibleState.None, 'Should Contain X Times    ${container}    ${item}    ${count}', 'BuiltIn'),
+            new KeywordTreeItem('Should Start With', vscode.TreeItemCollapsibleState.None, 'Should Start With    ${string}    ${start}    msg=', 'BuiltIn'),
+            new KeywordTreeItem('Should End With', vscode.TreeItemCollapsibleState.None, 'Should End With    ${string}    ${end}    msg=', 'BuiltIn'),
+            new KeywordTreeItem('Should Match', vscode.TreeItemCollapsibleState.None, 'Should Match    ${string}    ${pattern}    msg=', 'BuiltIn'),
+            new KeywordTreeItem('Should Match Regexp', vscode.TreeItemCollapsibleState.None, 'Should Match Regexp    ${string}    ${pattern}    msg=', 'BuiltIn'),
+            new KeywordTreeItem('Should Not Match', vscode.TreeItemCollapsibleState.None, 'Should Not Match    ${string}    ${pattern}    msg=', 'BuiltIn'),
+            new KeywordTreeItem('Should Not Match Regexp', vscode.TreeItemCollapsibleState.None, 'Should Not Match Regexp    ${string}    ${pattern}    msg=', 'BuiltIn'),
+            new KeywordTreeItem('Should Be True', vscode.TreeItemCollapsibleState.None, 'Should Be True    ${condition}    msg=', 'BuiltIn'),
+            new KeywordTreeItem('Should Not Be True', vscode.TreeItemCollapsibleState.None, 'Should Not Be True    ${condition}    msg=', 'BuiltIn'),
+            new KeywordTreeItem('Should Be False', vscode.TreeItemCollapsibleState.None, 'Should Be False    ${condition}    msg=', 'BuiltIn'),
+            new KeywordTreeItem('Should Not Be False', vscode.TreeItemCollapsibleState.None, 'Should Not Be False    ${condition}    msg=', 'BuiltIn'),
+
+            // Evaluation and Expressions
+            new KeywordTreeItem('Evaluate', vscode.TreeItemCollapsibleState.None, 'Evaluate    ${expression}    modules=', 'BuiltIn'),
+            new KeywordTreeItem('Run Keyword', vscode.TreeItemCollapsibleState.None, 'Run Keyword    ${keyword}    ${arg1}    ${arg2}', 'BuiltIn'),
+            new KeywordTreeItem('Run Keyword If', vscode.TreeItemCollapsibleState.None, 'Run Keyword If    ${condition}    ${keyword}    ${arg1}', 'BuiltIn'),
+            new KeywordTreeItem('Run Keyword Unless', vscode.TreeItemCollapsibleState.None, 'Run Keyword Unless    ${condition}    ${keyword}    ${arg1}', 'BuiltIn'),
+            new KeywordTreeItem('Run Keyword And Return Status', vscode.TreeItemCollapsibleState.None, 'Run Keyword And Return Status    ${keyword}    ${arg1}', 'BuiltIn'),
+            new KeywordTreeItem('Run Keyword And Return', vscode.TreeItemCollapsibleState.None, 'Run Keyword And Return    ${keyword}    ${arg1}', 'BuiltIn'),
+            new KeywordTreeItem('Run Keyword And Ignore Error', vscode.TreeItemCollapsibleState.None, 'Run Keyword And Ignore Error    ${keyword}    ${arg1}', 'BuiltIn'),
+            new KeywordTreeItem('Run Keyword And Expect Error', vscode.TreeItemCollapsibleState.None, 'Run Keyword And Expect Error    ${expected_error}    ${keyword}', 'BuiltIn'),
+            new KeywordTreeItem('Run Keyword And Continue On Failure', vscode.TreeItemCollapsibleState.None, 'Run Keyword And Continue On Failure    ${keyword}    ${arg1}', 'BuiltIn'),
+            new KeywordTreeItem('Run Keywords', vscode.TreeItemCollapsibleState.None, 'Run Keywords    ${keyword1}    AND    ${keyword2}', 'BuiltIn'),
+
+            // Control Flow
+            new KeywordTreeItem('Pass Execution', vscode.TreeItemCollapsibleState.None, 'Pass Execution    ${message}=', 'BuiltIn'),
+            new KeywordTreeItem('Pass Execution If', vscode.TreeItemCollapsibleState.None, 'Pass Execution If    ${condition}    ${message}=', 'BuiltIn'),
+            new KeywordTreeItem('Fail', vscode.TreeItemCollapsibleState.None, 'Fail    ${message}=', 'BuiltIn'),
+            new KeywordTreeItem('Fatal Error', vscode.TreeItemCollapsibleState.None, 'Fatal Error    ${message}=', 'BuiltIn'),
+            new KeywordTreeItem('Skip', vscode.TreeItemCollapsibleState.None, 'Skip    ${message}=', 'BuiltIn'),
+            new KeywordTreeItem('Skip If', vscode.TreeItemCollapsibleState.None, 'Skip If    ${condition}    ${message}=', 'BuiltIn'),
+            new KeywordTreeItem('Return From Keyword', vscode.TreeItemCollapsibleState.None, 'Return From Keyword    ${return_value}=', 'BuiltIn'),
+            new KeywordTreeItem('Return From Keyword If', vscode.TreeItemCollapsibleState.None, 'Return From Keyword If    ${condition}    ${return_value}=', 'BuiltIn'),
+
+            // Timing and Waiting
+            new KeywordTreeItem('Sleep', vscode.TreeItemCollapsibleState.None, 'Sleep    ${time}    reason=', 'BuiltIn'),
+            new KeywordTreeItem('Wait Until Keyword Succeeds', vscode.TreeItemCollapsibleState.None, 'Wait Until Keyword Succeeds    ${retry}    ${retry_interval}    ${keyword}', 'BuiltIn'),
+            new KeywordTreeItem('Repeat Keyword', vscode.TreeItemCollapsibleState.None, 'Repeat Keyword    ${repeat}    ${keyword}    ${arg1}', 'BuiltIn'),
+
+            // String Operations
+            new KeywordTreeItem('Catenate', vscode.TreeItemCollapsibleState.None, 'Catenate    ${string1}    ${string2}    SEPARATOR= ', 'BuiltIn'),
+            new KeywordTreeItem('Get Substring', vscode.TreeItemCollapsibleState.None, 'Get Substring    ${string}    ${start}    ${end}=', 'BuiltIn'),
+            new KeywordTreeItem('Replace String', vscode.TreeItemCollapsibleState.None, 'Replace String    ${string}    ${search_for}    ${replace_with}    count=-1', 'BuiltIn'),
+            new KeywordTreeItem('Replace String Using Regexp', vscode.TreeItemCollapsibleState.None, 'Replace String Using Regexp    ${string}    ${pattern}    ${replace_with}    count=-1', 'BuiltIn'),
+            new KeywordTreeItem('Split String', vscode.TreeItemCollapsibleState.None, 'Split String    ${string}    ${separator}=    max_split=-1', 'BuiltIn'),
+            new KeywordTreeItem('Split String From Right', vscode.TreeItemCollapsibleState.None, 'Split String From Right    ${string}    ${separator}=    max_split=-1', 'BuiltIn'),
+            new KeywordTreeItem('Strip String', vscode.TreeItemCollapsibleState.None, 'Strip String    ${string}    characters=', 'BuiltIn'),
+
+            // Import and Library Management
+            new KeywordTreeItem('Import Library', vscode.TreeItemCollapsibleState.None, 'Import Library    ${name}    ${arg1}=', 'BuiltIn'),
+            new KeywordTreeItem('Import Resource', vscode.TreeItemCollapsibleState.None, 'Import Resource    ${path}', 'BuiltIn'),
+            new KeywordTreeItem('Import Variables', vscode.TreeItemCollapsibleState.None, 'Import Variables    ${path}    ${arg1}=', 'BuiltIn'),
+            new KeywordTreeItem('Reload Library', vscode.TreeItemCollapsibleState.None, 'Reload Library    ${name_or_instance}', 'BuiltIn'),
+            new KeywordTreeItem('Get Library Instance', vscode.TreeItemCollapsibleState.None, 'Get Library Instance    ${name}=', 'BuiltIn'),
+
+            // Set and Get Operations
+            new KeywordTreeItem('Set Tags', vscode.TreeItemCollapsibleState.None, 'Set Tags    ${tag1}    ${tag2}', 'BuiltIn'),
+            new KeywordTreeItem('Remove Tags', vscode.TreeItemCollapsibleState.None, 'Remove Tags    ${tag1}    ${tag2}', 'BuiltIn'),
+            new KeywordTreeItem('Get Time', vscode.TreeItemCollapsibleState.None, 'Get Time    format=timestamp    time_=NOW', 'BuiltIn'),
+            new KeywordTreeItem('Comment', vscode.TreeItemCollapsibleState.None, 'Comment    ${message}', 'BuiltIn'),
+            new KeywordTreeItem('No Operation', vscode.TreeItemCollapsibleState.None, 'No Operation', 'BuiltIn'),
+
+            // Regex and Pattern Matching
+            new KeywordTreeItem('Get Regexp Matches', vscode.TreeItemCollapsibleState.None, 'Get Regexp Matches    ${string}    ${pattern}    ${groups}=', 'BuiltIn'),
+            new KeywordTreeItem('Get Lines Containing String', vscode.TreeItemCollapsibleState.None, 'Get Lines Containing String    ${string}    ${pattern}    case_insensitive=False', 'BuiltIn'),
+            new KeywordTreeItem('Get Lines Matching Pattern', vscode.TreeItemCollapsibleState.None, 'Get Lines Matching Pattern    ${string}    ${pattern}    case_insensitive=False', 'BuiltIn'),
+            new KeywordTreeItem('Get Lines Matching Regexp', vscode.TreeItemCollapsibleState.None, 'Get Lines Matching Regexp    ${string}    ${pattern}    partial_match=False', 'BuiltIn'),
+            new KeywordTreeItem('Get Line Count', vscode.TreeItemCollapsibleState.None, 'Get Line Count    ${string}', 'BuiltIn')
         ];
     }
 
@@ -2612,6 +2890,185 @@ class RobotFrameworkKeywordProvider implements vscode.TreeDataProvider<KeywordTr
             new KeywordTreeItem('Element Should Exist', vscode.TreeItemCollapsibleState.None, 'Element Should Exist    ${source}    ${xpath}', 'XML'),
             new KeywordTreeItem('Element Text Should Be', vscode.TreeItemCollapsibleState.None, 'Element Text Should Be    ${source}    ${expected}    ${xpath}', 'XML'),
             new KeywordTreeItem('Save XML', vscode.TreeItemCollapsibleState.None, 'Save XML    ${source}    ${path}', 'XML')
+        ];
+    }
+
+    private getSeleniumKeywords(): KeywordTreeItem[] {
+        return [
+            // Browser Management
+            new KeywordTreeItem('Open Browser', vscode.TreeItemCollapsibleState.None, 'Open Browser    ${url}    ${browser}=chrome', 'SeleniumLibrary'),
+            new KeywordTreeItem('Close Browser', vscode.TreeItemCollapsibleState.None, 'Close Browser', 'SeleniumLibrary'),
+            new KeywordTreeItem('Close All Browsers', vscode.TreeItemCollapsibleState.None, 'Close All Browsers', 'SeleniumLibrary'),
+            new KeywordTreeItem('Switch Browser', vscode.TreeItemCollapsibleState.None, 'Switch Browser    ${index_or_alias}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Get Browser Aliases', vscode.TreeItemCollapsibleState.None, 'Get Browser Aliases', 'SeleniumLibrary'),
+            new KeywordTreeItem('Get Browser Ids', vscode.TreeItemCollapsibleState.None, 'Get Browser Ids', 'SeleniumLibrary'),
+
+            // Navigation
+            new KeywordTreeItem('Go To', vscode.TreeItemCollapsibleState.None, 'Go To    ${url}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Go Back', vscode.TreeItemCollapsibleState.None, 'Go Back', 'SeleniumLibrary'),
+            new KeywordTreeItem('Go Forward', vscode.TreeItemCollapsibleState.None, 'Go Forward', 'SeleniumLibrary'),
+            new KeywordTreeItem('Reload Page', vscode.TreeItemCollapsibleState.None, 'Reload Page', 'SeleniumLibrary'),
+            new KeywordTreeItem('Get Location', vscode.TreeItemCollapsibleState.None, 'Get Location', 'SeleniumLibrary'),
+            new KeywordTreeItem('Get Title', vscode.TreeItemCollapsibleState.None, 'Get Title', 'SeleniumLibrary'),
+            new KeywordTreeItem('Title Should Be', vscode.TreeItemCollapsibleState.None, 'Title Should Be    ${title}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Location Should Be', vscode.TreeItemCollapsibleState.None, 'Location Should Be    ${url}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Location Should Contain', vscode.TreeItemCollapsibleState.None, 'Location Should Contain    ${expected}', 'SeleniumLibrary'),
+
+            // Element Interaction
+            new KeywordTreeItem('Click Element', vscode.TreeItemCollapsibleState.None, 'Click Element    ${locator}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Click Button', vscode.TreeItemCollapsibleState.None, 'Click Button    ${locator}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Click Link', vscode.TreeItemCollapsibleState.None, 'Click Link    ${locator}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Click Image', vscode.TreeItemCollapsibleState.None, 'Click Image    ${locator}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Double Click Element', vscode.TreeItemCollapsibleState.None, 'Double Click Element    ${locator}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Right Click Element', vscode.TreeItemCollapsibleState.None, 'Right Click Element    ${locator}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Mouse Over', vscode.TreeItemCollapsibleState.None, 'Mouse Over    ${locator}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Mouse Down', vscode.TreeItemCollapsibleState.None, 'Mouse Down    ${locator}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Mouse Up', vscode.TreeItemCollapsibleState.None, 'Mouse Up    ${locator}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Drag And Drop', vscode.TreeItemCollapsibleState.None, 'Drag And Drop    ${source}    ${target}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Drag And Drop By Offset', vscode.TreeItemCollapsibleState.None, 'Drag And Drop By Offset    ${locator}    ${xoffset}    ${yoffset}', 'SeleniumLibrary'),
+
+            // Text Input
+            new KeywordTreeItem('Input Text', vscode.TreeItemCollapsibleState.None, 'Input Text    ${locator}    ${text}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Input Password', vscode.TreeItemCollapsibleState.None, 'Input Password    ${locator}    ${password}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Clear Element Text', vscode.TreeItemCollapsibleState.None, 'Clear Element Text    ${locator}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Press Key', vscode.TreeItemCollapsibleState.None, 'Press Key    ${locator}    ${key}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Press Keys', vscode.TreeItemCollapsibleState.None, 'Press Keys    ${locator}    ${keys}', 'SeleniumLibrary'),
+
+            // Form Elements
+            new KeywordTreeItem('Submit Form', vscode.TreeItemCollapsibleState.None, 'Submit Form    ${locator}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Select From List By Index', vscode.TreeItemCollapsibleState.None, 'Select From List By Index    ${locator}    ${index}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Select From List By Label', vscode.TreeItemCollapsibleState.None, 'Select From List By Label    ${locator}    ${label}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Select From List By Value', vscode.TreeItemCollapsibleState.None, 'Select From List By Value    ${locator}    ${value}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Unselect From List By Index', vscode.TreeItemCollapsibleState.None, 'Unselect From List By Index    ${locator}    ${index}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Unselect From List By Label', vscode.TreeItemCollapsibleState.None, 'Unselect From List By Label    ${locator}    ${label}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Unselect From List By Value', vscode.TreeItemCollapsibleState.None, 'Unselect From List By Value    ${locator}    ${value}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Select Checkbox', vscode.TreeItemCollapsibleState.None, 'Select Checkbox    ${locator}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Unselect Checkbox', vscode.TreeItemCollapsibleState.None, 'Unselect Checkbox    ${locator}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Select Radio Button', vscode.TreeItemCollapsibleState.None, 'Select Radio Button    ${group_name}    ${value}', 'SeleniumLibrary'),
+
+            // Wait Keywords
+            new KeywordTreeItem('Wait Until Element Is Visible', vscode.TreeItemCollapsibleState.None, 'Wait Until Element Is Visible    ${locator}    timeout=5s', 'SeleniumLibrary'),
+            new KeywordTreeItem('Wait Until Element Is Not Visible', vscode.TreeItemCollapsibleState.None, 'Wait Until Element Is Not Visible    ${locator}    timeout=5s', 'SeleniumLibrary'),
+            new KeywordTreeItem('Wait Until Element Is Enabled', vscode.TreeItemCollapsibleState.None, 'Wait Until Element Is Enabled    ${locator}    timeout=5s', 'SeleniumLibrary'),
+            new KeywordTreeItem('Wait Until Element Is Not Enabled', vscode.TreeItemCollapsibleState.None, 'Wait Until Element Is Not Enabled    ${locator}    timeout=5s', 'SeleniumLibrary'),
+            new KeywordTreeItem('Wait Until Element Contains', vscode.TreeItemCollapsibleState.None, 'Wait Until Element Contains    ${locator}    ${text}    timeout=5s', 'SeleniumLibrary'),
+            new KeywordTreeItem('Wait Until Element Does Not Contain', vscode.TreeItemCollapsibleState.None, 'Wait Until Element Does Not Contain    ${locator}    ${text}    timeout=5s', 'SeleniumLibrary'),
+            new KeywordTreeItem('Wait Until Page Contains', vscode.TreeItemCollapsibleState.None, 'Wait Until Page Contains    ${text}    timeout=5s', 'SeleniumLibrary'),
+            new KeywordTreeItem('Wait Until Page Does Not Contain', vscode.TreeItemCollapsibleState.None, 'Wait Until Page Does Not Contain    ${text}    timeout=5s', 'SeleniumLibrary'),
+            new KeywordTreeItem('Wait Until Page Contains Element', vscode.TreeItemCollapsibleState.None, 'Wait Until Page Contains Element    ${locator}    timeout=5s', 'SeleniumLibrary'),
+            new KeywordTreeItem('Wait Until Page Does Not Contain Element', vscode.TreeItemCollapsibleState.None, 'Wait Until Page Does Not Contain Element    ${locator}    timeout=5s', 'SeleniumLibrary'),
+            new KeywordTreeItem('Wait Until Location Is', vscode.TreeItemCollapsibleState.None, 'Wait Until Location Is    ${expected}    timeout=5s', 'SeleniumLibrary'),
+            new KeywordTreeItem('Wait Until Location Contains', vscode.TreeItemCollapsibleState.None, 'Wait Until Location Contains    ${expected}    timeout=5s', 'SeleniumLibrary'),
+            new KeywordTreeItem('Wait Until Title Is', vscode.TreeItemCollapsibleState.None, 'Wait Until Title Is    ${title}    timeout=5s', 'SeleniumLibrary'),
+            new KeywordTreeItem('Wait Until Title Contains', vscode.TreeItemCollapsibleState.None, 'Wait Until Title Contains    ${title}    timeout=5s', 'SeleniumLibrary'),
+
+            // Element Properties and Verification
+            new KeywordTreeItem('Get Text', vscode.TreeItemCollapsibleState.None, 'Get Text    ${locator}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Get Value', vscode.TreeItemCollapsibleState.None, 'Get Value    ${locator}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Get Element Attribute', vscode.TreeItemCollapsibleState.None, 'Get Element Attribute    ${locator}    ${attribute}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Get Element Size', vscode.TreeItemCollapsibleState.None, 'Get Element Size    ${locator}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Get Element Count', vscode.TreeItemCollapsibleState.None, 'Get Element Count    ${locator}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Get Webelement', vscode.TreeItemCollapsibleState.None, 'Get Webelement    ${locator}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Get Webelements', vscode.TreeItemCollapsibleState.None, 'Get Webelements    ${locator}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Element Should Be Visible', vscode.TreeItemCollapsibleState.None, 'Element Should Be Visible    ${locator}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Element Should Not Be Visible', vscode.TreeItemCollapsibleState.None, 'Element Should Not Be Visible    ${locator}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Element Should Be Enabled', vscode.TreeItemCollapsibleState.None, 'Element Should Be Enabled    ${locator}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Element Should Be Disabled', vscode.TreeItemCollapsibleState.None, 'Element Should Be Disabled    ${locator}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Element Should Contain', vscode.TreeItemCollapsibleState.None, 'Element Should Contain    ${locator}    ${expected}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Element Should Not Contain', vscode.TreeItemCollapsibleState.None, 'Element Should Not Contain    ${locator}    ${expected}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Element Text Should Be', vscode.TreeItemCollapsibleState.None, 'Element Text Should Be    ${locator}    ${expected}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Element Text Should Not Be', vscode.TreeItemCollapsibleState.None, 'Element Text Should Not Be    ${locator}    ${expected}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Element Attribute Value Should Be', vscode.TreeItemCollapsibleState.None, 'Element Attribute Value Should Be    ${locator}    ${attribute}    ${expected}', 'SeleniumLibrary'),
+
+            // Page Content Verification
+            new KeywordTreeItem('Page Should Contain', vscode.TreeItemCollapsibleState.None, 'Page Should Contain    ${text}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Page Should Not Contain', vscode.TreeItemCollapsibleState.None, 'Page Should Not Contain    ${text}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Page Should Contain Element', vscode.TreeItemCollapsibleState.None, 'Page Should Contain Element    ${locator}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Page Should Not Contain Element', vscode.TreeItemCollapsibleState.None, 'Page Should Not Contain Element    ${locator}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Page Should Contain Link', vscode.TreeItemCollapsibleState.None, 'Page Should Contain Link    ${text}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Page Should Not Contain Link', vscode.TreeItemCollapsibleState.None, 'Page Should Not Contain Link    ${text}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Page Should Contain Button', vscode.TreeItemCollapsibleState.None, 'Page Should Contain Button    ${text}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Page Should Not Contain Button', vscode.TreeItemCollapsibleState.None, 'Page Should Not Contain Button    ${text}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Page Should Contain Image', vscode.TreeItemCollapsibleState.None, 'Page Should Contain Image    ${locator}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Page Should Not Contain Image', vscode.TreeItemCollapsibleState.None, 'Page Should Not Contain Image    ${locator}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Page Should Contain Textfield', vscode.TreeItemCollapsibleState.None, 'Page Should Contain Textfield    ${locator}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Page Should Not Contain Textfield', vscode.TreeItemCollapsibleState.None, 'Page Should Not Contain Textfield    ${locator}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Page Should Contain Checkbox', vscode.TreeItemCollapsibleState.None, 'Page Should Contain Checkbox    ${locator}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Page Should Not Contain Checkbox', vscode.TreeItemCollapsibleState.None, 'Page Should Not Contain Checkbox    ${locator}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Page Should Contain Radio Button', vscode.TreeItemCollapsibleState.None, 'Page Should Contain Radio Button    ${locator}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Page Should Not Contain Radio Button', vscode.TreeItemCollapsibleState.None, 'Page Should Not Contain Radio Button    ${locator}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Page Should Contain List', vscode.TreeItemCollapsibleState.None, 'Page Should Contain List    ${locator}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Page Should Not Contain List', vscode.TreeItemCollapsibleState.None, 'Page Should Not Contain List    ${locator}', 'SeleniumLibrary'),
+
+            // Window and Frame Management
+            new KeywordTreeItem('Select Window', vscode.TreeItemCollapsibleState.None, 'Select Window    ${locator}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Close Window', vscode.TreeItemCollapsibleState.None, 'Close Window', 'SeleniumLibrary'),
+            new KeywordTreeItem('Get Window Handles', vscode.TreeItemCollapsibleState.None, 'Get Window Handles', 'SeleniumLibrary'),
+            new KeywordTreeItem('Get Window Identifiers', vscode.TreeItemCollapsibleState.None, 'Get Window Identifiers', 'SeleniumLibrary'),
+            new KeywordTreeItem('Get Window Names', vscode.TreeItemCollapsibleState.None, 'Get Window Names', 'SeleniumLibrary'),
+            new KeywordTreeItem('Get Window Size', vscode.TreeItemCollapsibleState.None, 'Get Window Size', 'SeleniumLibrary'),
+            new KeywordTreeItem('Set Window Size', vscode.TreeItemCollapsibleState.None, 'Set Window Size    ${width}    ${height}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Get Window Position', vscode.TreeItemCollapsibleState.None, 'Get Window Position', 'SeleniumLibrary'),
+            new KeywordTreeItem('Set Window Position', vscode.TreeItemCollapsibleState.None, 'Set Window Position    ${x}    ${y}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Maximize Browser Window', vscode.TreeItemCollapsibleState.None, 'Maximize Browser Window', 'SeleniumLibrary'),
+            new KeywordTreeItem('Minimize Browser Window', vscode.TreeItemCollapsibleState.None, 'Minimize Browser Window', 'SeleniumLibrary'),
+            new KeywordTreeItem('Select Frame', vscode.TreeItemCollapsibleState.None, 'Select Frame    ${locator}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Unselect Frame', vscode.TreeItemCollapsibleState.None, 'Unselect Frame', 'SeleniumLibrary'),
+            new KeywordTreeItem('Current Frame Should Contain', vscode.TreeItemCollapsibleState.None, 'Current Frame Should Contain    ${text}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Current Frame Should Not Contain', vscode.TreeItemCollapsibleState.None, 'Current Frame Should Not Contain    ${text}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Frame Should Contain', vscode.TreeItemCollapsibleState.None, 'Frame Should Contain    ${locator}    ${text}', 'SeleniumLibrary'),
+
+            // Alert Handling
+            new KeywordTreeItem('Alert Should Be Present', vscode.TreeItemCollapsibleState.None, 'Alert Should Be Present    ${text}=', 'SeleniumLibrary'),
+            new KeywordTreeItem('Alert Should Not Be Present', vscode.TreeItemCollapsibleState.None, 'Alert Should Not Be Present', 'SeleniumLibrary'),
+            new KeywordTreeItem('Handle Alert', vscode.TreeItemCollapsibleState.None, 'Handle Alert    action=ACCEPT', 'SeleniumLibrary'),
+            new KeywordTreeItem('Input Text Into Alert', vscode.TreeItemCollapsibleState.None, 'Input Text Into Alert    ${text}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Confirm Action', vscode.TreeItemCollapsibleState.None, 'Confirm Action', 'SeleniumLibrary'),
+            new KeywordTreeItem('Dismiss Alert', vscode.TreeItemCollapsibleState.None, 'Dismiss Alert', 'SeleniumLibrary'),
+            new KeywordTreeItem('Get Alert Message', vscode.TreeItemCollapsibleState.None, 'Get Alert Message', 'SeleniumLibrary'),
+
+            // Screenshot and Logging
+            new KeywordTreeItem('Capture Page Screenshot', vscode.TreeItemCollapsibleState.None, 'Capture Page Screenshot    ${filename}=', 'SeleniumLibrary'),
+            new KeywordTreeItem('Capture Element Screenshot', vscode.TreeItemCollapsibleState.None, 'Capture Element Screenshot    ${locator}    ${filename}=', 'SeleniumLibrary'),
+            new KeywordTreeItem('Set Screenshot Directory', vscode.TreeItemCollapsibleState.None, 'Set Screenshot Directory    ${path}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Log Source', vscode.TreeItemCollapsibleState.None, 'Log Source    loglevel=INFO', 'SeleniumLibrary'),
+            new KeywordTreeItem('Log Location', vscode.TreeItemCollapsibleState.None, 'Log Location', 'SeleniumLibrary'),
+            new KeywordTreeItem('Log Title', vscode.TreeItemCollapsibleState.None, 'Log Title', 'SeleniumLibrary'),
+
+            // Cookie Management
+            new KeywordTreeItem('Get Cookies', vscode.TreeItemCollapsibleState.None, 'Get Cookies', 'SeleniumLibrary'),
+            new KeywordTreeItem('Get Cookie', vscode.TreeItemCollapsibleState.None, 'Get Cookie    ${name}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Add Cookie', vscode.TreeItemCollapsibleState.None, 'Add Cookie    ${name}    ${value}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Delete Cookie', vscode.TreeItemCollapsibleState.None, 'Delete Cookie    ${name}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Delete All Cookies', vscode.TreeItemCollapsibleState.None, 'Delete All Cookies', 'SeleniumLibrary'),
+
+            // Execution and Speed
+            new KeywordTreeItem('Set Selenium Speed', vscode.TreeItemCollapsibleState.None, 'Set Selenium Speed    ${value}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Get Selenium Speed', vscode.TreeItemCollapsibleState.None, 'Get Selenium Speed', 'SeleniumLibrary'),
+            new KeywordTreeItem('Set Selenium Timeout', vscode.TreeItemCollapsibleState.None, 'Set Selenium Timeout    ${value}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Get Selenium Timeout', vscode.TreeItemCollapsibleState.None, 'Get Selenium Timeout', 'SeleniumLibrary'),
+            new KeywordTreeItem('Set Selenium Implicit Wait', vscode.TreeItemCollapsibleState.None, 'Set Selenium Implicit Wait    ${value}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Get Selenium Implicit Wait', vscode.TreeItemCollapsibleState.None, 'Get Selenium Implicit Wait', 'SeleniumLibrary'),
+
+            // JavaScript Execution
+            new KeywordTreeItem('Execute Javascript', vscode.TreeItemCollapsibleState.None, 'Execute Javascript    ${code}', 'SeleniumLibrary'),
+            new KeywordTreeItem('Execute Async Javascript', vscode.TreeItemCollapsibleState.None, 'Execute Async Javascript    ${code}', 'SeleniumLibrary')
+        ];
+    }
+
+    private getRequestsKeywords(): KeywordTreeItem[] {
+        return [
+            new KeywordTreeItem('Create Session', vscode.TreeItemCollapsibleState.None, 'Create Session    ${alias}    ${url}', 'RequestsLibrary'),
+            new KeywordTreeItem('GET On Session', vscode.TreeItemCollapsibleState.None, 'GET On Session    ${alias}    ${url}', 'RequestsLibrary'),
+            new KeywordTreeItem('POST On Session', vscode.TreeItemCollapsibleState.None, 'POST On Session    ${alias}    ${url}    ${data}', 'RequestsLibrary'),
+            new KeywordTreeItem('PUT On Session', vscode.TreeItemCollapsibleState.None, 'PUT On Session    ${alias}    ${url}    ${data}', 'RequestsLibrary'),
+            new KeywordTreeItem('DELETE On Session', vscode.TreeItemCollapsibleState.None, 'DELETE On Session    ${alias}    ${url}', 'RequestsLibrary'),
+            new KeywordTreeItem('GET Request', vscode.TreeItemCollapsibleState.None, 'GET Request    ${alias}    ${uri}', 'RequestsLibrary'),
+            new KeywordTreeItem('POST Request', vscode.TreeItemCollapsibleState.None, 'POST Request    ${alias}    ${uri}    ${data}', 'RequestsLibrary'),
+            new KeywordTreeItem('PUT Request', vscode.TreeItemCollapsibleState.None, 'PUT Request    ${alias}    ${uri}    ${data}', 'RequestsLibrary'),
+            new KeywordTreeItem('DELETE Request', vscode.TreeItemCollapsibleState.None, 'DELETE Request    ${alias}    ${uri}', 'RequestsLibrary'),
+            new KeywordTreeItem('Status Should Be', vscode.TreeItemCollapsibleState.None, 'Status Should Be    ${expected_status}    ${response}', 'RequestsLibrary'),
+            new KeywordTreeItem('Should Be Equal', vscode.TreeItemCollapsibleState.None, 'Should Be Equal    ${first}    ${second}', 'RequestsLibrary')
         ];
     }
 }
