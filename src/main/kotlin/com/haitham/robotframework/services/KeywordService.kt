@@ -3,6 +3,7 @@ package com.haitham.robotframework.services
 import com.haitham.robotframework.model.KeywordArgument
 import com.haitham.robotframework.model.RobotKeyword
 import com.haitham.robotframework.model.RobotVariable
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
@@ -15,6 +16,7 @@ class KeywordService(private val project: Project) {
     private val projectKeywords = ConcurrentHashMap<String, RobotKeyword>()
     private val officialKeywords = ConcurrentHashMap<String, RobotKeyword>()
     private val variables = ConcurrentHashMap<String, RobotVariable>()
+    private val libdocLoader = LibdocKeywordLoader(project)
 
     init {
         loadOfficialKeywords()
@@ -183,13 +185,28 @@ class KeywordService(private val project: Project) {
     }
     
     private fun parsePythonKeywords(content: String, filePath: String): List<RobotKeyword> {
+        // Try using libdoc first for accurate keyword extraction
+        val libdocKeywords = libdocLoader.loadKeywordsFromFile(filePath)
+        if (libdocKeywords.isNotEmpty()) {
+            ApplicationManager.getApplication().invokeLater {
+                println("DEBUG: Loaded ${libdocKeywords.size} keywords from $filePath via libdoc")
+                libdocKeywords.keys.take(10).forEach { 
+                    println("  - $it") 
+                }
+            }
+            return libdocKeywords.values.toList()
+        }
+        
+        // Fallback to regex parsing if libdoc fails
+        println("DEBUG: Libdoc failed for $filePath, using regex fallback")
         val keywords = mutableListOf<RobotKeyword>()
         val lines = content.lines()
         val fileName = File(filePath).nameWithoutExtension
 
         for (line in lines) {
             val trimmed = line.trim()
-            if (trimmed.startsWith("def ") && !trimmed.contains("__")) {
+            // Skip private/magic methods (__ prefix) and ensure it's a function definition
+            if (trimmed.startsWith("def ") && !trimmed.contains("__") && !trimmed.startsWith("def _")) {
                 val functionName = trimmed.substringAfter("def ").substringBefore("(").trim()
                 val paramsString = trimmed.substringAfter("(").substringBefore(")").trim()
                 
@@ -313,16 +330,65 @@ class KeywordService(private val project: Project) {
     }
     
     private fun loadOfficialKeywords() {
-        officialKeywords.putAll(getBuiltInKeywords())
-        officialKeywords.putAll(getBrowserKeywords())
-        officialKeywords.putAll(getSeleniumKeywords())
-        officialKeywords.putAll(getCollectionsKeywords())
-        officialKeywords.putAll(getStringKeywords())
-        officialKeywords.putAll(getDateTimeKeywords())
-        officialKeywords.putAll(getOperatingSystemKeywords())
-        officialKeywords.putAll(getProcessKeywords())
-        officialKeywords.putAll(getXMLKeywords())
-        officialKeywords.putAll(getRequestsLibraryKeywords())
+        // Try loading from installed libraries using libdoc
+        val librariesToLoad = listOf(
+            "BuiltIn",
+            "Browser",
+            "SeleniumLibrary", 
+            "Collections",
+            "String",
+            "DateTime",
+            "OperatingSystem",
+            "Process",
+            "XML",
+            "RequestsLibrary"
+        )
+        
+        var loadedFromLibdoc = 0
+        for (libraryName in librariesToLoad) {
+            val keywords = libdocLoader.loadLibraryKeywords(libraryName)
+            if (keywords.isNotEmpty()) {
+                officialKeywords.putAll(keywords)
+                loadedFromLibdoc++
+            }
+        }
+        
+        // Fallback to hardcoded keywords if libdoc loading failed or was partial
+        if (loadedFromLibdoc < librariesToLoad.size) {
+            // Only add hardcoded keywords for libraries that failed to load
+            val loadedLibraries = officialKeywords.values.map { it.library }.toSet()
+            
+            if ("BuiltIn" !in loadedLibraries) {
+                officialKeywords.putAll(getBuiltInKeywords())
+            }
+            if ("Browser" !in loadedLibraries) {
+                officialKeywords.putAll(getBrowserKeywords())
+            }
+            if ("SeleniumLibrary" !in loadedLibraries) {
+                officialKeywords.putAll(getSeleniumKeywords())
+            }
+            if ("Collections" !in loadedLibraries) {
+                officialKeywords.putAll(getCollectionsKeywords())
+            }
+            if ("String" !in loadedLibraries) {
+                officialKeywords.putAll(getStringKeywords())
+            }
+            if ("DateTime" !in loadedLibraries) {
+                officialKeywords.putAll(getDateTimeKeywords())
+            }
+            if ("OperatingSystem" !in loadedLibraries) {
+                officialKeywords.putAll(getOperatingSystemKeywords())
+            }
+            if ("Process" !in loadedLibraries) {
+                officialKeywords.putAll(getProcessKeywords())
+            }
+            if ("XML" !in loadedLibraries) {
+                officialKeywords.putAll(getXMLKeywords())
+            }
+            if ("RequestsLibrary" !in loadedLibraries) {
+                officialKeywords.putAll(getRequestsLibraryKeywords())
+            }
+        }
     }
     
     private fun getBuiltInKeywords(): Map<String, RobotKeyword> {

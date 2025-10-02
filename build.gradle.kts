@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "com.haitham.robotframework"
-version = "1.0.8"
+version = "1.1.2"
 
 repositories {
     mavenCentral()
@@ -13,6 +13,7 @@ repositories {
 
 dependencies {
     // Kotlin stdlib is provided by IntelliJ Platform
+    implementation("org.json:json:20240303")  // For parsing libdoc JSON output
 }
 
 configurations {
