@@ -1,23 +1,36 @@
-.vscode/**
-.vscode-test/**
-src/**
-.yarnrc
-vsc-extension-quickstart.md
-**/tsconfig.json
-**/.eslintrc.json
-**/*.map
-**/*.ts
-**/node_modules/**
-**/.DS_Store
-**/Thumbs.db
-**/*.log
-test-file.robot
-REMOVAL_SUMMARY.md
-debug-*.js
-*.test.js
-.git/**
-.github/**
-**/.nyc_output/**
-**/coverage/**
-**/.vscode-test/**
-**/.vscode/**
+# Gradle
+.gradle/
+build/
+gradle-app.setting
+!gradle-wrapper.jar
+.gradletasknamecache
+
+# IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# MacOS
+.DS_Store
+
+# VSCode artifacts
+.vscode/
+node_modules/
+out/
+*.vsix
+
+# Build outputs
+dist/
+*.zip
+*.jar
+!gradle-wrapper.jar
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.swp
+*~

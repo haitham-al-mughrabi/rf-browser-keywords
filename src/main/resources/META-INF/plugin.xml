@@ -1,0 +1,73 @@
+<idea-plugin>
+    <id>com.haitham.robotframework.keywords</id>
+    <name>Robot Framework Keywords Explorer</name>
+    <vendor email="haitham.m.almughrabi@gmail.com" url="https://github.com/haitham-al-mughrabi">Haitham Al-Mughrabi</vendor>
+
+    <description><![CDATA[
+    <p>Comprehensive Robot Framework extension with keyword explorer, auto-completion, documentation viewer, and project scanning capabilities.</p>
+    
+    <h3>Features:</h3>
+    <ul>
+        <li><b>Project Keywords Explorer</b> - Automatic scanning and indexing of keywords</li>
+        <li><b>Official Keywords Library</b> - Browser, SeleniumLibrary, BuiltIn, Collections, and more</li>
+        <li><b>Variables Management</b> - Smart insertion with proper syntax</li>
+        <li><b>Interactive Documentation</b> - View detailed keyword documentation</li>
+        <li><b>One-click Imports</b> - Import libraries and resources instantly</li>
+        <li><b>Search & Filter</b> - Quick keyword and variable search</li>
+        <li><b>Parameter Dialog</b> - Interactive parameter input before insertion</li>
+    </ul>
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+    <depends optional="true">com.intellij.modules.python</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <!-- Tool Window -->
+        <toolWindow id="Robot Framework" 
+                   factoryClass="com.haitham.robotframework.ui.RobotFrameworkToolWindowFactory"
+                   anchor="right" 
+                   icon="/icons/robot.svg"/>
+        
+        <!-- Services -->
+        <projectService serviceImplementation="com.haitham.robotframework.services.KeywordService"/>
+        
+        <!-- Notification Group -->
+        <notificationGroup id="Robot Framework" displayType="BALLOON"/>
+    </extensions>
+
+    <actions>
+        <!-- Insert Actions -->
+        <action id="RobotFramework.InsertKeyword"
+                class="com.haitham.robotframework.actions.InsertKeywordAction"
+                text="Insert Keyword"
+                description="Insert selected keyword at cursor position">
+        </action>
+        
+        <action id="RobotFramework.InsertKeywordWithDialog"
+                class="com.haitham.robotframework.actions.InsertKeywordWithDialogAction"
+                text="Insert Keyword with Parameters"
+                description="Insert keyword with parameter dialog">
+        </action>
+        
+        <action id="RobotFramework.CopyKeyword"
+                class="com.haitham.robotframework.actions.CopyKeywordAction"
+                text="Copy Keyword"
+                description="Copy keyword to clipboard">
+        </action>
+        
+        <!-- Import Actions -->
+        <action id="RobotFramework.ImportLibrary"
+                class="com.haitham.robotframework.actions.ImportLibraryAction"
+                text="Import Library/Resource"
+                description="Import library or resource file">
+        </action>
+        
+        <!-- Refresh Action -->
+        <action id="RobotFramework.Refresh"
+                class="com.haitham.robotframework.actions.RefreshAction"
+                text="Refresh"
+                description="Refresh keywords and variables">
+        </action>
+    </actions>
+
+</idea-plugin>
