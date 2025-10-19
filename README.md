@@ -268,6 +268,20 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 3. Open in VS Code
 4. Press F5 to launch Extension Development Host
 
+### Building Local Versions
+
+Quick build for both VSCode and PyCharm extensions:
+
+```bash
+# macOS/Linux
+./build-all.sh
+
+# Windows
+build-all.bat
+```
+
+See [Build Scripts README](BUILD_SCRIPTS_README.md) and [Local Build Guide](LOCAL_BUILD_GUIDE.md) for detailed instructions.
+
 ## 📄 License
 
 This extension is licensed under the [MIT License](LICENSE).

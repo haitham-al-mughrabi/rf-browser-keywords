@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "com.haitham.robotframework"
-version = "1.1.2"
+version = "1.1.3"
 
 repositories {
     mavenCentral()
@@ -44,7 +44,7 @@ tasks {
 
     patchPluginXml {
         sinceBuild.set("232")
-        untilBuild.set("251.*")
+        untilBuild.set("")  // No upper limit - compatible with all future versions
         
         // Plugin description from README
         pluginDescription.set("""
