@@ -23,10 +23,13 @@ export function activate(context: vscode.ExtensionContext) {
     };
     clearAndScan();
 
-    vscode.commands.registerCommand('rfKeywords.insertKeyword', (item: KeywordTreeItem) => {
+    vscode.commands.registerCommand('rfKeywords.insertKeyword', async (item: KeywordTreeItem) => {
         if (item.implementation) {
             const editor = vscode.window.activeTextEditor;
             if (editor) {
+                // Auto-import the file if needed
+                await autoImportForKeyword(item, editor);
+
                 const position = editor.selection.active;
                 // Generate Robot Framework format
                 const robotKeywordCall = generateRobotFrameworkKeywordCall(
@@ -47,6 +50,9 @@ export function activate(context: vscode.ExtensionContext) {
         if (item.implementation) {
             const editor = vscode.window.activeTextEditor;
             if (editor) {
+                // Auto-import the file if needed
+                await autoImportForKeyword(item, editor);
+
                 const position = editor.selection.active;
 
                 // Extract parameters from the keyword
@@ -135,10 +141,13 @@ export function activate(context: vscode.ExtensionContext) {
     });
 
     // Variable commands
-    vscode.commands.registerCommand('rfVariables.insertVariable', (item: VariableTreeItem) => {
+    vscode.commands.registerCommand('rfVariables.insertVariable', async (item: VariableTreeItem) => {
         if (item.variable) {
             const editor = vscode.window.activeTextEditor;
             if (editor) {
+                // Auto-import the file if needed
+                await autoImportForVariable(item, editor);
+
                 const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
                 const wrapVariables = config.get('wrapVariables', true);
                 const variableName = wrapVariables ? `${item.variable.name}` : item.variable.name;
@@ -239,6 +248,48 @@ export function activate(context: vscode.ExtensionContext) {
         variablesProvider.clearSearch();
         vscode.window.showInformationMessage('Search cleared. Showing all variables.');
     });
+}
+
+async function autoImportForKeyword(item: KeywordTreeItem, editor: vscode.TextEditor): Promise<void> {
+    if (!item.filePath) return;
+
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+    if (!workspaceFolders) return;
+
+    const workspacePath = workspaceFolders[0].uri.fsPath;
+    const relativeTargetPath = path.relative(workspacePath, item.filePath);
+
+    // Determine import type based on file extension
+    const isPythonFile = item.filePath.endsWith('.py');
+    const importType = isPythonFile ? 'Library' : 'Resource';
+    const importStatement = `${importType}    ${relativeTargetPath}`;
+
+    // Check if import already exists
+    const existingImport = checkExistingImport(editor, importType, relativeTargetPath);
+    if (!existingImport.exists) {
+        await insertImportStatement(editor, importStatement);
+    }
+}
+
+async function autoImportForVariable(item: VariableTreeItem, editor: vscode.TextEditor): Promise<void> {
+    if (!item.filePath) return;
+
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+    if (!workspaceFolders) return;
+
+    const workspacePath = workspaceFolders[0].uri.fsPath;
+    const relativeTargetPath = path.relative(workspacePath, item.filePath);
+
+    // Determine import type based on file extension
+    const isPythonFile = item.filePath.endsWith('.py');
+    const importType = isPythonFile ? 'Variables' : 'Resource';
+    const importStatement = `${importType}    ${relativeTargetPath}`;
+
+    // Check if import already exists
+    const existingImport = checkExistingImport(editor, importType, relativeTargetPath);
+    if (!existingImport.exists) {
+        await insertImportStatement(editor, importStatement);
+    }
 }
 
 async function importLibraryOrResource(item: KeywordTreeItem): Promise<void> {
@@ -2107,7 +2158,7 @@ class RobotFrameworkKeywordProvider implements vscode.TreeDataProvider<KeywordTr
                         vscode.TreeItemCollapsibleState.None,
                         keyword.implementation,
                         keyword.library || 'Custom',
-                        'keyword'
+                        keyword  // Pass full keyword object to preserve filePath
                     ));
                 }
             });
@@ -2121,7 +2172,7 @@ class RobotFrameworkKeywordProvider implements vscode.TreeDataProvider<KeywordTr
                         vscode.TreeItemCollapsibleState.None,
                         keyword.implementation,
                         keyword.library,
-                        'keyword'
+                        keyword  // Pass full keyword object
                     ));
                 }
             });

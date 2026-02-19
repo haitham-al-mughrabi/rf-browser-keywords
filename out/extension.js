@@ -23,10 +23,12 @@ function activate(context) {
         variablesProvider.refresh();
     };
     clearAndScan();
-    vscode.commands.registerCommand('rfKeywords.insertKeyword', (item) => {
+    vscode.commands.registerCommand('rfKeywords.insertKeyword', async (item) => {
         if (item.implementation) {
             const editor = vscode.window.activeTextEditor;
             if (editor) {
+                // Auto-import the file if needed
+                await autoImportForKeyword(item, editor);
                 const position = editor.selection.active;
                 // Generate Robot Framework format
                 const robotKeywordCall = generateRobotFrameworkKeywordCall(item.label || 'Unknown Keyword', item.implementation, item.library);
@@ -42,6 +44,8 @@ function activate(context) {
         if (item.implementation) {
             const editor = vscode.window.activeTextEditor;
             if (editor) {
+                // Auto-import the file if needed
+                await autoImportForKeyword(item, editor);
                 const position = editor.selection.active;
                 // Extract parameters from the keyword
                 const parameters = extractKeywordParameters(item.implementation);
@@ -110,10 +114,12 @@ function activate(context) {
         }
     });
     // Variable commands
-    vscode.commands.registerCommand('rfVariables.insertVariable', (item) => {
+    vscode.commands.registerCommand('rfVariables.insertVariable', async (item) => {
         if (item.variable) {
             const editor = vscode.window.activeTextEditor;
             if (editor) {
+                // Auto-import the file if needed
+                await autoImportForVariable(item, editor);
                 const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
                 const wrapVariables = config.get('wrapVariables', true);
                 const variableName = wrapVariables ? `${item.variable.name}` : item.variable.name;
@@ -202,6 +208,42 @@ function activate(context) {
     });
 }
 exports.activate = activate;
+async function autoImportForKeyword(item, editor) {
+    if (!item.filePath)
+        return;
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+    if (!workspaceFolders)
+        return;
+    const workspacePath = workspaceFolders[0].uri.fsPath;
+    const relativeTargetPath = path.relative(workspacePath, item.filePath);
+    // Determine import type based on file extension
+    const isPythonFile = item.filePath.endsWith('.py');
+    const importType = isPythonFile ? 'Library' : 'Resource';
+    const importStatement = `${importType}    ${relativeTargetPath}`;
+    // Check if import already exists
+    const existingImport = checkExistingImport(editor, importType, relativeTargetPath);
+    if (!existingImport.exists) {
+        await insertImportStatement(editor, importStatement);
+    }
+}
+async function autoImportForVariable(item, editor) {
+    if (!item.filePath)
+        return;
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+    if (!workspaceFolders)
+        return;
+    const workspacePath = workspaceFolders[0].uri.fsPath;
+    const relativeTargetPath = path.relative(workspacePath, item.filePath);
+    // Determine import type based on file extension
+    const isPythonFile = item.filePath.endsWith('.py');
+    const importType = isPythonFile ? 'Variables' : 'Resource';
+    const importStatement = `${importType}    ${relativeTargetPath}`;
+    // Check if import already exists
+    const existingImport = checkExistingImport(editor, importType, relativeTargetPath);
+    if (!existingImport.exists) {
+        await insertImportStatement(editor, importStatement);
+    }
+}
 async function importLibraryOrResource(item) {
     if (!item.label) {
         vscode.window.showErrorMessage('No file selected for import');
@@ -1795,7 +1837,8 @@ class RobotFrameworkKeywordProvider {
             const customKeywords = config.get('customKeywords', []);
             customKeywords.forEach(keyword => {
                 if (keyword.name.toLowerCase().includes(this.searchTerm)) {
-                    results.push(new KeywordTreeItem(keyword.name, vscode.TreeItemCollapsibleState.None, keyword.implementation, keyword.library || 'Custom', 'keyword'));
+                    results.push(new KeywordTreeItem(keyword.name, vscode.TreeItemCollapsibleState.None, keyword.implementation, keyword.library || 'Custom', keyword // Pass full keyword object to preserve filePath
+                    ));
                 }
             });
         }
@@ -1804,7 +1847,8 @@ class RobotFrameworkKeywordProvider {
             const officialKeywords = getAllOfficialKeywords();
             officialKeywords.forEach(keyword => {
                 if (keyword.name.toLowerCase().includes(this.searchTerm)) {
-                    results.push(new KeywordTreeItem(keyword.name, vscode.TreeItemCollapsibleState.None, keyword.implementation, keyword.library, 'keyword'));
+                    results.push(new KeywordTreeItem(keyword.name, vscode.TreeItemCollapsibleState.None, keyword.implementation, keyword.library, keyword // Pass full keyword object
+                    ));
                 }
             });
         }
