@@ -2,7 +2,7 @@
   "name": "robot-framework-keywords",
   "displayName": "Robot Framework Keywords Explorer",
   "description": "Comprehensive Robot Framework extension with keyword explorer, auto-completion, documentation viewer, and project scanning capabilities",
-  "version": "1.0.3",
+  "version": "1.1.0",
   "publisher": "Haitham-Al-Mughrabi",
   "author": {
     "name": "Haitham Al-Mughrabi",

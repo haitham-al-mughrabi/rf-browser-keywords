@@ -4,10 +4,67 @@ exports.deactivate = exports.activate = void 0;
 const vscode = require("vscode");
 const fs = require("fs");
 const path = require("path");
+const KEYWORDS_STORAGE_FILE = 'rf-keywords-cache.json';
+const VARIABLES_STORAGE_FILE = 'rf-variables-cache.json';
+function getStoragePath(context, fileName) {
+    return path.join(context.globalStorageUri.fsPath, fileName);
+}
+async function loadKeywordsFromFile(context) {
+    const filePath = getStoragePath(context, KEYWORDS_STORAGE_FILE);
+    try {
+        if (fs.existsSync(filePath)) {
+            const data = fs.readFileSync(filePath, 'utf-8');
+            return JSON.parse(data);
+        }
+    }
+    catch (error) {
+        console.error('Error loading keywords from file:', error);
+    }
+    return [];
+}
+async function saveKeywordsToFile(context, keywords) {
+    const filePath = getStoragePath(context, KEYWORDS_STORAGE_FILE);
+    try {
+        const dir = path.dirname(filePath);
+        if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+        }
+        fs.writeFileSync(filePath, JSON.stringify(keywords, null, 2), 'utf-8');
+    }
+    catch (error) {
+        console.error('Error saving keywords to file:', error);
+    }
+}
+async function loadVariablesFromFile(context) {
+    const filePath = getStoragePath(context, VARIABLES_STORAGE_FILE);
+    try {
+        if (fs.existsSync(filePath)) {
+            const data = fs.readFileSync(filePath, 'utf-8');
+            return JSON.parse(data);
+        }
+    }
+    catch (error) {
+        console.error('Error loading variables from file:', error);
+    }
+    return [];
+}
+async function saveVariablesToFile(context, variables) {
+    const filePath = getStoragePath(context, VARIABLES_STORAGE_FILE);
+    try {
+        const dir = path.dirname(filePath);
+        if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+        }
+        fs.writeFileSync(filePath, JSON.stringify(variables, null, 2), 'utf-8');
+    }
+    catch (error) {
+        console.error('Error saving variables to file:', error);
+    }
+}
 function activate(context) {
-    const projectProvider = new RobotFrameworkKeywordProvider('project');
-    const officialProvider = new RobotFrameworkKeywordProvider('official');
-    const variablesProvider = new VariablesProvider();
+    const projectProvider = new RobotFrameworkKeywordProvider('project', context);
+    const officialProvider = new RobotFrameworkKeywordProvider('official', context);
+    const variablesProvider = new VariablesProvider(context);
     const documentationProvider = new DocumentationProvider();
     vscode.window.registerTreeDataProvider('rfProjectKeywords', projectProvider);
     vscode.window.registerTreeDataProvider('rfOfficialKeywords', officialProvider);
@@ -15,9 +72,7 @@ function activate(context) {
     vscode.window.registerTreeDataProvider('rfDocumentation', documentationProvider);
     // Clear old keywords and scan workspace for keywords on activation
     const clearAndScan = async () => {
-        const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
-        await config.update('customKeywords', [], vscode.ConfigurationTarget.Global);
-        await scanWorkspaceKeywords();
+        await scanWorkspaceKeywords(context);
         projectProvider.refresh();
         officialProvider.refresh();
         variablesProvider.refresh();
@@ -90,10 +145,7 @@ function activate(context) {
     });
     vscode.commands.registerCommand('rfKeywords.refresh', async () => {
         vscode.window.showInformationMessage('Scanning workspace for keywords...');
-        // Clear existing custom keywords to force fresh scan
-        const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
-        await config.update('customKeywords', [], vscode.ConfigurationTarget.Global);
-        await scanWorkspaceKeywords();
+        await scanWorkspaceKeywords(context);
         projectProvider.refresh();
         officialProvider.refresh();
         variablesProvider.refresh();
@@ -144,7 +196,7 @@ function activate(context) {
         }
     });
     vscode.commands.registerCommand('rfVariables.importFile', async (item) => {
-        await importVariableFile(item);
+        await importVariableFile(item, context);
     });
     vscode.commands.registerCommand('rfVariables.openFile', async (item) => {
         const targetFilePath = item.filePath || (item.variable && item.variable.filePath);
@@ -162,7 +214,7 @@ function activate(context) {
     });
     vscode.commands.registerCommand('rfVariables.refresh', async () => {
         vscode.window.showInformationMessage('Scanning workspace for variables...');
-        await scanWorkspaceVariables();
+        await scanWorkspaceVariables(context);
         variablesProvider.refresh();
     });
     // Documentation commands
@@ -333,7 +385,7 @@ async function importLibraryOrResource(item) {
     await insertImportStatement(editor, importStatement);
     vscode.window.showInformationMessage(`Imported: ${importStatement}`);
 }
-async function importVariableFile(item) {
+async function importVariableFile(item, context) {
     if (!item.label) {
         vscode.window.showErrorMessage('No file selected for import');
         return;
@@ -344,8 +396,7 @@ async function importVariableFile(item) {
         return;
     }
     // Get the file information from the tree item
-    const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
-    const discoveredVariables = config.get('discoveredVariables', []);
+    const discoveredVariables = await loadVariablesFromFile(context);
     // Find the actual file path for this variable file
     const baseFileName = item.label.replace(/\.(py|robot|resource)$/, '');
     console.log('Looking for variable file:', baseFileName);
@@ -537,7 +588,7 @@ function checkExistingImport(editor, importType, importPath) {
     }
     return { exists: false };
 }
-async function scanWorkspaceKeywords() {
+async function scanWorkspaceKeywords(context) {
     const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
     const shouldScan = config.get('scanCustomKeywords', true);
     if (!shouldScan)
@@ -576,19 +627,17 @@ async function scanWorkspaceKeywords() {
         }
     }
     if (discoveredKeywords.length > 0) {
-        // Merge with existing custom keywords
-        const existingKeywords = config.get('customKeywords', []);
-        const mergedKeywords = mergeKeywords(existingKeywords, discoveredKeywords);
-        await config.update('customKeywords', mergedKeywords, vscode.ConfigurationTarget.Global);
+        // Save to file instead of config
+        await saveKeywordsToFile(context, discoveredKeywords);
         vscode.window.showInformationMessage(`Discovered ${discoveredKeywords.length} keywords from workspace`);
     }
     else {
         vscode.window.showInformationMessage('No keywords found in workspace');
     }
     // Also scan for variables
-    await scanWorkspaceVariables();
+    await scanWorkspaceVariables(context);
 }
-async function scanWorkspaceVariables() {
+async function scanWorkspaceVariables(context) {
     const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
     const shouldScan = config.get('scanVariables', true);
     if (!shouldScan)
@@ -624,8 +673,8 @@ async function scanWorkspaceVariables() {
             await scanVariablesWithGlobPatterns(basePath, scanPaths, discoveredVariables);
         }
     }
-    // Store discovered variables
-    await config.update('discoveredVariables', discoveredVariables, vscode.ConfigurationTarget.Global);
+    // Store discovered variables to file
+    await saveVariablesToFile(context, discoveredVariables);
     console.log(`Discovered ${discoveredVariables.length} variables from workspace`);
 }
 async function scanVariablesWithGlobPatterns(basePath, patterns, variables) {
@@ -1723,8 +1772,9 @@ function getAllOfficialKeywords() {
     return keywords;
 }
 class RobotFrameworkKeywordProvider {
-    constructor(viewType) {
+    constructor(viewType, context) {
         this.viewType = viewType;
+        this.context = context;
         this._onDidChangeTreeData = new vscode.EventEmitter();
         this.onDidChangeTreeData = this._onDidChangeTreeData.event;
         this.searchTerm = '';
@@ -1833,8 +1883,7 @@ class RobotFrameworkKeywordProvider {
         const results = [];
         if (this.viewType === 'project') {
             // Search in project keywords
-            const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
-            const customKeywords = config.get('customKeywords', []);
+            const customKeywords = this.getStoredKeywords();
             customKeywords.forEach(keyword => {
                 if (keyword.name.toLowerCase().includes(this.searchTerm)) {
                     results.push(new KeywordTreeItem(keyword.name, vscode.TreeItemCollapsibleState.None, keyword.implementation, keyword.library || 'Custom', keyword // Pass full keyword object to preserve filePath
@@ -1858,8 +1907,7 @@ class RobotFrameworkKeywordProvider {
         return results;
     }
     getProjectKeywordCategories() {
-        const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
-        const customKeywords = config.get('customKeywords', []);
+        const customKeywords = this.getStoredKeywords();
         if (customKeywords.length === 0) {
             return [new KeywordTreeItem('No project keywords found', vscode.TreeItemCollapsibleState.None, undefined, 'Empty')];
         }
@@ -2128,8 +2176,7 @@ class RobotFrameworkKeywordProvider {
         return fileItems.sort((a, b) => a.label.localeCompare(b.label));
     }
     getKeywordsForFile(fileName) {
-        const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
-        const customKeywords = config.get('customKeywords', []);
+        const customKeywords = this.getStoredKeywords();
         // Remove file extension from the label for comparison
         const baseFileName = fileName.replace(/\.(py|robot|resource)$/, '');
         const fileKeywords = customKeywords.filter(keyword => keyword.library === baseFileName &&
@@ -2137,9 +2184,21 @@ class RobotFrameworkKeywordProvider {
         return fileKeywords.map(keyword => new KeywordTreeItem(keyword.name, vscode.TreeItemCollapsibleState.None, keyword.implementation, baseFileName, keyword // Pass the full keyword object
         ));
     }
+    getStoredKeywords() {
+        const filePath = getStoragePath(this.context, KEYWORDS_STORAGE_FILE);
+        try {
+            if (fs.existsSync(filePath)) {
+                const data = fs.readFileSync(filePath, 'utf-8');
+                return JSON.parse(data);
+            }
+        }
+        catch (error) {
+            console.error('Error reading keywords from file:', error);
+        }
+        return [];
+    }
     getManualCustomKeywords() {
-        const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
-        const customKeywords = config.get('customKeywords', []);
+        const customKeywords = this.getStoredKeywords();
         // Only return manually created keywords (no source property)
         const manualKeywords = customKeywords.filter(keyword => !keyword.source);
         return manualKeywords.map(keyword => new KeywordTreeItem(keyword.name, vscode.TreeItemCollapsibleState.None, keyword.implementation, keyword.library || 'Custom', keyword // Pass the full keyword object
@@ -2646,7 +2705,8 @@ class RobotFrameworkKeywordProvider {
     }
 }
 class VariablesProvider {
-    constructor() {
+    constructor(context) {
+        this.context = context;
         this._onDidChangeTreeData = new vscode.EventEmitter();
         this.onDidChangeTreeData = this._onDidChangeTreeData.event;
         this.searchTerm = '';
@@ -2692,11 +2752,11 @@ class VariablesProvider {
     }
     getVariableSearchResults() {
         const results = [];
-        const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
-        const discoveredVariables = config.get('discoveredVariables', []);
+        const discoveredVariables = this.getStoredVariables();
         discoveredVariables.forEach(variable => {
             if (variable.name.toLowerCase().includes(this.searchTerm)) {
-                results.push(new VariableTreeItem(variable.name, vscode.TreeItemCollapsibleState.None, variable, 'variable'));
+                results.push(new VariableTreeItem(variable.name, vscode.TreeItemCollapsibleState.None, variable, 'variable', variable.filePath // Pass the file path
+                ));
             }
         });
         if (results.length === 0) {
@@ -2706,8 +2766,7 @@ class VariablesProvider {
         return results;
     }
     getVariableCategories() {
-        const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
-        const discoveredVariables = config.get('discoveredVariables', []);
+        const discoveredVariables = this.getStoredVariables();
         if (discoveredVariables.length === 0) {
             return [new VariableTreeItem('No variables found', vscode.TreeItemCollapsibleState.None, undefined, // no variable data
                 undefined, // no folder path
@@ -2854,8 +2913,7 @@ class VariablesProvider {
         return folderPath.replace(/[\/\\]/g, ' → ');
     }
     getFilesInFolder(folderPath) {
-        const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
-        const discoveredVariables = config.get('discoveredVariables', []);
+        const discoveredVariables = this.getStoredVariables();
         // Get all files in this specific folder
         const filesInFolder = new Map();
         discoveredVariables.forEach(variable => {
@@ -2915,12 +2973,25 @@ class VariablesProvider {
         return fileItems.sort((a, b) => a.label.localeCompare(b.label));
     }
     getVariablesForFile(fileName) {
-        const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
-        const discoveredVariables = config.get('discoveredVariables', []);
+        const discoveredVariables = this.getStoredVariables();
         // Remove file extension from the label for comparison
         const baseFileName = fileName.replace(/\.(py|robot|resource)$/, '');
         const fileVariables = discoveredVariables.filter(variable => variable.fileName === baseFileName);
-        return fileVariables.map(variable => new VariableTreeItem(variable.name, vscode.TreeItemCollapsibleState.None, variable));
+        return fileVariables.map(variable => new VariableTreeItem(variable.name, vscode.TreeItemCollapsibleState.None, variable, undefined, variable.filePath // Pass the file path
+        ));
+    }
+    getStoredVariables() {
+        const filePath = getStoragePath(this.context, VARIABLES_STORAGE_FILE);
+        try {
+            if (fs.existsSync(filePath)) {
+                const data = fs.readFileSync(filePath, 'utf-8');
+                return JSON.parse(data);
+            }
+        }
+        catch (error) {
+            console.error('Error reading variables from file:', error);
+        }
+        return [];
     }
 }
 class DocumentationProvider {

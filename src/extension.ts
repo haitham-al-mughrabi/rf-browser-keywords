@@ -2,10 +2,69 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 
+const KEYWORDS_STORAGE_FILE = 'rf-keywords-cache.json';
+const VARIABLES_STORAGE_FILE = 'rf-variables-cache.json';
+
+function getStoragePath(context: vscode.ExtensionContext, fileName: string): string {
+    return path.join(context.globalStorageUri.fsPath, fileName);
+}
+
+async function loadKeywordsFromFile(context: vscode.ExtensionContext): Promise<any[]> {
+    const filePath = getStoragePath(context, KEYWORDS_STORAGE_FILE);
+    try {
+        if (fs.existsSync(filePath)) {
+            const data = fs.readFileSync(filePath, 'utf-8');
+            return JSON.parse(data);
+        }
+    } catch (error) {
+        console.error('Error loading keywords from file:', error);
+    }
+    return [];
+}
+
+async function saveKeywordsToFile(context: vscode.ExtensionContext, keywords: any[]): Promise<void> {
+    const filePath = getStoragePath(context, KEYWORDS_STORAGE_FILE);
+    try {
+        const dir = path.dirname(filePath);
+        if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+        }
+        fs.writeFileSync(filePath, JSON.stringify(keywords, null, 2), 'utf-8');
+    } catch (error) {
+        console.error('Error saving keywords to file:', error);
+    }
+}
+
+async function loadVariablesFromFile(context: vscode.ExtensionContext): Promise<any[]> {
+    const filePath = getStoragePath(context, VARIABLES_STORAGE_FILE);
+    try {
+        if (fs.existsSync(filePath)) {
+            const data = fs.readFileSync(filePath, 'utf-8');
+            return JSON.parse(data);
+        }
+    } catch (error) {
+        console.error('Error loading variables from file:', error);
+    }
+    return [];
+}
+
+async function saveVariablesToFile(context: vscode.ExtensionContext, variables: any[]): Promise<void> {
+    const filePath = getStoragePath(context, VARIABLES_STORAGE_FILE);
+    try {
+        const dir = path.dirname(filePath);
+        if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+        }
+        fs.writeFileSync(filePath, JSON.stringify(variables, null, 2), 'utf-8');
+    } catch (error) {
+        console.error('Error saving variables to file:', error);
+    }
+}
+
 export function activate(context: vscode.ExtensionContext) {
-    const projectProvider = new RobotFrameworkKeywordProvider('project');
-    const officialProvider = new RobotFrameworkKeywordProvider('official');
-    const variablesProvider = new VariablesProvider();
+    const projectProvider = new RobotFrameworkKeywordProvider('project', context);
+    const officialProvider = new RobotFrameworkKeywordProvider('official', context);
+    const variablesProvider = new VariablesProvider(context);
     const documentationProvider = new DocumentationProvider();
     vscode.window.registerTreeDataProvider('rfProjectKeywords', projectProvider);
     vscode.window.registerTreeDataProvider('rfOfficialKeywords', officialProvider);
@@ -14,9 +73,7 @@ export function activate(context: vscode.ExtensionContext) {
 
     // Clear old keywords and scan workspace for keywords on activation
     const clearAndScan = async () => {
-        const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
-        await config.update('customKeywords', [], vscode.ConfigurationTarget.Global);
-        await scanWorkspaceKeywords();
+        await scanWorkspaceKeywords(context);
         projectProvider.refresh();
         officialProvider.refresh();
         variablesProvider.refresh();
@@ -113,10 +170,7 @@ export function activate(context: vscode.ExtensionContext) {
 
     vscode.commands.registerCommand('rfKeywords.refresh', async () => {
         vscode.window.showInformationMessage('Scanning workspace for keywords...');
-        // Clear existing custom keywords to force fresh scan
-        const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
-        await config.update('customKeywords', [], vscode.ConfigurationTarget.Global);
-        await scanWorkspaceKeywords();
+        await scanWorkspaceKeywords(context);
         projectProvider.refresh();
         officialProvider.refresh();
         variablesProvider.refresh();
@@ -178,7 +232,7 @@ export function activate(context: vscode.ExtensionContext) {
     });
 
     vscode.commands.registerCommand('rfVariables.importFile', async (item: VariableTreeItem) => {
-        await importVariableFile(item);
+        await importVariableFile(item, context);
     });
 
     vscode.commands.registerCommand('rfVariables.openFile', async (item: VariableTreeItem) => {
@@ -199,7 +253,7 @@ export function activate(context: vscode.ExtensionContext) {
 
     vscode.commands.registerCommand('rfVariables.refresh', async () => {
         vscode.window.showInformationMessage('Scanning workspace for variables...');
-        await scanWorkspaceVariables();
+        await scanWorkspaceVariables(context);
         variablesProvider.refresh();
     });
 
@@ -412,7 +466,7 @@ async function importLibraryOrResource(item: KeywordTreeItem): Promise<void> {
     vscode.window.showInformationMessage(`Imported: ${importStatement}`);
 }
 
-async function importVariableFile(item: VariableTreeItem): Promise<void> {
+async function importVariableFile(item: VariableTreeItem, context: vscode.ExtensionContext): Promise<void> {
     if (!item.label) {
         vscode.window.showErrorMessage('No file selected for import');
         return;
@@ -425,8 +479,7 @@ async function importVariableFile(item: VariableTreeItem): Promise<void> {
     }
 
     // Get the file information from the tree item
-    const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
-    const discoveredVariables = config.get('discoveredVariables', []) as any[];
+    const discoveredVariables = await loadVariablesFromFile(context);
 
     // Find the actual file path for this variable file
     const baseFileName = item.label.replace(/\.(py|robot|resource)$/, '');
@@ -671,7 +724,7 @@ function checkExistingImport(editor: vscode.TextEditor, importType: string, impo
 
 
 
-async function scanWorkspaceKeywords(): Promise<void> {
+async function scanWorkspaceKeywords(context: vscode.ExtensionContext): Promise<void> {
     const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
     const shouldScan = config.get('scanCustomKeywords', true);
 
@@ -718,21 +771,18 @@ async function scanWorkspaceKeywords(): Promise<void> {
 
 
     if (discoveredKeywords.length > 0) {
-        // Merge with existing custom keywords
-        const existingKeywords = config.get('customKeywords', []) as any[];
-        const mergedKeywords = mergeKeywords(existingKeywords, discoveredKeywords);
-
-        await config.update('customKeywords', mergedKeywords, vscode.ConfigurationTarget.Global);
+        // Save to file instead of config
+        await saveKeywordsToFile(context, discoveredKeywords);
         vscode.window.showInformationMessage(`Discovered ${discoveredKeywords.length} keywords from workspace`);
     } else {
         vscode.window.showInformationMessage('No keywords found in workspace');
     }
 
     // Also scan for variables
-    await scanWorkspaceVariables();
+    await scanWorkspaceVariables(context);
 }
 
-async function scanWorkspaceVariables(): Promise<void> {
+async function scanWorkspaceVariables(context: vscode.ExtensionContext): Promise<void> {
     const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
     const shouldScan = config.get('scanVariables', true);
 
@@ -775,8 +825,8 @@ async function scanWorkspaceVariables(): Promise<void> {
         }
     }
 
-    // Store discovered variables
-    await config.update('discoveredVariables', discoveredVariables, vscode.ConfigurationTarget.Global);
+    // Store discovered variables to file
+    await saveVariablesToFile(context, discoveredVariables);
     console.log(`Discovered ${discoveredVariables.length} variables from workspace`);
 }
 
@@ -2036,7 +2086,7 @@ class RobotFrameworkKeywordProvider implements vscode.TreeDataProvider<KeywordTr
     readonly onDidChangeTreeData: vscode.Event<KeywordTreeItem | undefined | null | void> = this._onDidChangeTreeData.event;
     private searchTerm: string = '';
 
-    constructor(private viewType: 'project' | 'official') { }
+    constructor(private viewType: 'project' | 'official', private context: vscode.ExtensionContext) { }
 
     refresh(): void {
         this._onDidChangeTreeData.fire();
@@ -2148,8 +2198,7 @@ class RobotFrameworkKeywordProvider implements vscode.TreeDataProvider<KeywordTr
 
         if (this.viewType === 'project') {
             // Search in project keywords
-            const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
-            const customKeywords = config.get('customKeywords', []) as any[];
+            const customKeywords = this.getStoredKeywords();
 
             customKeywords.forEach(keyword => {
                 if (keyword.name.toLowerCase().includes(this.searchTerm)) {
@@ -2191,8 +2240,7 @@ class RobotFrameworkKeywordProvider implements vscode.TreeDataProvider<KeywordTr
     }
 
     private getProjectKeywordCategories(): KeywordTreeItem[] {
-        const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
-        const customKeywords = config.get('customKeywords', []) as any[];
+        const customKeywords = this.getStoredKeywords();
 
         if (customKeywords.length === 0) {
             return [new KeywordTreeItem(
@@ -2535,8 +2583,7 @@ class RobotFrameworkKeywordProvider implements vscode.TreeDataProvider<KeywordTr
     }
 
     private getKeywordsForFile(fileName: string): KeywordTreeItem[] {
-        const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
-        const customKeywords = config.get('customKeywords', []) as any[];
+        const customKeywords = this.getStoredKeywords();
 
         // Remove file extension from the label for comparison
         const baseFileName = fileName.replace(/\.(py|robot|resource)$/, '');
@@ -2557,9 +2604,21 @@ class RobotFrameworkKeywordProvider implements vscode.TreeDataProvider<KeywordTr
         );
     }
 
+    private getStoredKeywords(): any[] {
+        const filePath = getStoragePath(this.context, KEYWORDS_STORAGE_FILE);
+        try {
+            if (fs.existsSync(filePath)) {
+                const data = fs.readFileSync(filePath, 'utf-8');
+                return JSON.parse(data);
+            }
+        } catch (error) {
+            console.error('Error reading keywords from file:', error);
+        }
+        return [];
+    }
+
     private getManualCustomKeywords(): KeywordTreeItem[] {
-        const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
-        const customKeywords = config.get('customKeywords', []) as any[];
+        const customKeywords = this.getStoredKeywords();
 
         // Only return manually created keywords (no source property)
         const manualKeywords = customKeywords.filter(keyword => !keyword.source);
@@ -3129,6 +3188,8 @@ class VariablesProvider implements vscode.TreeDataProvider<VariableTreeItem> {
     readonly onDidChangeTreeData: vscode.Event<VariableTreeItem | undefined | null | void> = this._onDidChangeTreeData.event;
     private searchTerm: string = '';
 
+    constructor(private context: vscode.ExtensionContext) { }
+
     refresh(): void {
         this._onDidChangeTreeData.fire();
     }
@@ -3173,8 +3234,7 @@ class VariablesProvider implements vscode.TreeDataProvider<VariableTreeItem> {
 
     private getVariableSearchResults(): VariableTreeItem[] {
         const results: VariableTreeItem[] = [];
-        const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
-        const discoveredVariables = config.get('discoveredVariables', []) as any[];
+        const discoveredVariables = this.getStoredVariables();
 
         discoveredVariables.forEach(variable => {
             if (variable.name.toLowerCase().includes(this.searchTerm)) {
@@ -3182,7 +3242,8 @@ class VariablesProvider implements vscode.TreeDataProvider<VariableTreeItem> {
                     variable.name,
                     vscode.TreeItemCollapsibleState.None,
                     variable,
-                    'variable'
+                    'variable',
+                    variable.filePath  // Pass the file path
                 ));
             }
         });
@@ -3201,8 +3262,7 @@ class VariablesProvider implements vscode.TreeDataProvider<VariableTreeItem> {
     }
 
     private getVariableCategories(): VariableTreeItem[] {
-        const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
-        const discoveredVariables = config.get('discoveredVariables', []) as any[];
+        const discoveredVariables = this.getStoredVariables();
 
         if (discoveredVariables.length === 0) {
             return [new VariableTreeItem(
@@ -3394,8 +3454,7 @@ class VariablesProvider implements vscode.TreeDataProvider<VariableTreeItem> {
     }
 
     private getFilesInFolder(folderPath: string): VariableTreeItem[] {
-        const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
-        const discoveredVariables = config.get('discoveredVariables', []) as any[];
+        const discoveredVariables = this.getStoredVariables();
 
         // Get all files in this specific folder
         const filesInFolder = new Map<string, any[]>();
@@ -3464,8 +3523,7 @@ class VariablesProvider implements vscode.TreeDataProvider<VariableTreeItem> {
     }
 
     private getVariablesForFile(fileName: string): VariableTreeItem[] {
-        const config = vscode.workspace.getConfiguration('robotFrameworkKeywords');
-        const discoveredVariables = config.get('discoveredVariables', []) as any[];
+        const discoveredVariables = this.getStoredVariables();
 
         // Remove file extension from the label for comparison
         const baseFileName = fileName.replace(/\.(py|robot|resource)$/, '');
@@ -3478,9 +3536,24 @@ class VariablesProvider implements vscode.TreeDataProvider<VariableTreeItem> {
             new VariableTreeItem(
                 variable.name,
                 vscode.TreeItemCollapsibleState.None,
-                variable
+                variable,
+                undefined,
+                variable.filePath  // Pass the file path
             )
         );
+    }
+
+    private getStoredVariables(): any[] {
+        const filePath = getStoragePath(this.context, VARIABLES_STORAGE_FILE);
+        try {
+            if (fs.existsSync(filePath)) {
+                const data = fs.readFileSync(filePath, 'utf-8');
+                return JSON.parse(data);
+            }
+        } catch (error) {
+            console.error('Error reading variables from file:', error);
+        }
+        return [];
     }
 }
 
